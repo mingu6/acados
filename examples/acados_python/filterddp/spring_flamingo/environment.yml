@@ -1,0 +1,17 @@
+# conda env create -f environment.yml
+# then: pip install --no-deps -e <acados-filterddp>/interfaces/acados_template
+# and export ACADOS_SOURCE_DIR / LD_LIBRARY_PATH to the FilterDDP fork.
+name: flamingo-acados
+channels:
+  - conda-forge
+dependencies:
+  - python =3.12
+  - pinocchio-python =4.1.0  # ships pinocchio.casadi
+  - casadi =3.7.2
+  - numpy
+  - scipy
+  - matplotlib
+  - h5py
+  - cython
+  - Deprecated
+  - pytest

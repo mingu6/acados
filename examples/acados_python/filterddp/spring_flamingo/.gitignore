@@ -1,0 +1,5 @@
+c_generated_code/
+*_ocp.json
+output/
+__pycache__/
+.pytest_cache/
