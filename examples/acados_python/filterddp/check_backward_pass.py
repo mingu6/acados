@@ -28,44 +28,37 @@
 # POSSIBILITY OF SUCH DAMAGE.;
 #
 
+"""
+Solve the unconstrained acrobot RK4 problem with FILTERDDP a given number of times from the
+same initial guess and print the statistics of each solve, to compare against FilterDDP.jl.
+"""
 
-include ../../Makefile.rule
+import sys
 
-OBJS =
+import numpy as np
+from acados_template import AcadosOcpSolver
 
-OBJS += ocp_nlp_common.o
-OBJS += ocp_nlp_cost_common.o
-OBJS += ocp_nlp_cost_ls.o
-OBJS += ocp_nlp_cost_nls.o
-OBJS += ocp_nlp_cost_conl.o
-OBJS += ocp_nlp_cost_external.o
-OBJS += ocp_nlp_constraints_common.o
-OBJS += ocp_nlp_constraints_bgh.o
-OBJS += ocp_nlp_constraints_bgp.o
-OBJS += ocp_nlp_dynamics_common.o
-OBJS += ocp_nlp_dynamics_cont.o
-OBJS += ocp_nlp_dynamics_cont_with_cost.o
-OBJS += ocp_nlp_dynamics_disc.o
-OBJS += ocp_nlp_globalization_common.o
-OBJS += ocp_nlp_globalization_fixed_step.o
-OBJS += ocp_nlp_globalization_funnel.o
-OBJS += ocp_nlp_globalization_merit_backtracking.o
-OBJS += ocp_nlp_sqp.o
-OBJS += ocp_nlp_sqp_with_feasible_qp.o
-OBJS += ocp_nlp_ddp.o
-OBJS += ocp_nlp_filterddp.o
-OBJS += ocp_nlp_sqp_rti.o
-OBJS += ocp_nlp_reg_common.o
-OBJS += ocp_nlp_reg_convexify.o
-OBJS += ocp_nlp_reg_mirror.o
-OBJS += ocp_nlp_reg_project.o
-OBJS += ocp_nlp_reg_project_reduc_hess.o
-OBJS += ocp_nlp_reg_noreg.o
-OBJS += ocp_nlp_reg_glm.o
-OBJS += ocp_nlp_qpscaling.o
+from acrobot_filterddp import initialize, setup_rk4
+from acrobot_model import DEFAULT_PARAMETERS, NX, load_parameter_sets
 
-obj: $(OBJS)
 
-clean:
-	rm -f *.o
-	rm -f *.s
+def main():
+    params = load_parameter_sets(sys.argv[1])[0] if len(sys.argv) > 1 else DEFAULT_PARAMETERS
+    max_iter = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    n_solves = int(sys.argv[3]) if len(sys.argv) > 3 else 1
+
+    ocp = setup_rk4(None, 1e-7, max_iter, 0)
+    solver = AcadosOcpSolver(ocp, json_file='check_rk4_ocp.json', verbose=False)
+    np.set_printoptions(precision=6, linewidth=200)
+    for k in range(n_solves):
+        initialize(solver, 1, params, np.zeros(1))
+        status = solver.solve()
+        stats = solver.get_stats('statistics')
+        print(f'solve {k}: status {status} iters {solver.get_stats("nlp_iter")} cost {solver.get_cost():.10e}')
+        print('  columns: iter du_inf pr_inf cs_inf objective mu reg alpha ls')
+        print(stats.T[:4])
+    print('x[N]:', solver.get(ocp.solver_options.N_horizon, 'x'))
+
+
+if __name__ == '__main__':
+    main()

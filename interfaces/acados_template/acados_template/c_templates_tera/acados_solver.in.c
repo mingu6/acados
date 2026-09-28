@@ -2767,7 +2767,7 @@ static void {{ name }}_acados_create_set_opts({{ name }}_solver_capsule* capsule
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "allow_direction_mode_switch_to_nominal", &allow_direction_mode_switch_to_nominal);
 {%- endif %}
 
-{% if solver_options.nlp_solver_type == "SQP" or solver_options.nlp_solver_type == "DDP" or solver_options.nlp_solver_type == "SQP_WITH_FEASIBLE_QP"%}
+{% if solver_options.nlp_solver_type == "SQP" or solver_options.nlp_solver_type == "DDP" or solver_options.nlp_solver_type == "SQP_WITH_FEASIBLE_QP" or solver_options.nlp_solver_type == "FILTERDDP"%}
     // set SQP specific options
     double nlp_solver_tol_stat = {{ solver_options.nlp_solver_tol_stat }};
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "tol_stat", &nlp_solver_tol_stat);
@@ -3969,6 +3969,24 @@ void {{ name }}_acados_print_stats({{ name }}_solver_capsule* capsule)
     }
 {%- elif solver_options.nlp_solver_type == "DDP" %}
     printf("{{ name }}_acados_print_stats: not implemented for DDP\n");
+{%- elif solver_options.nlp_solver_type == "FILTERDDP" %}
+    printf("iter\tdu_inf\t\tpr_inf\t\tcs_inf\t\tobjective\tmu\t\treg\t\talpha\t\tls\n");
+    for (int i = 0; i < nrow; i++)
+    {
+        for (int j = 0; j < stat_n + 1; j++)
+        {
+            if (j == 0 || j == 8)
+            {
+                tmp_int = (int) stat[i + j * nrow];
+                printf("%d\t", tmp_int);
+            }
+            else
+            {
+                printf("%e\t", stat[i + j * nrow]);
+            }
+        }
+        printf("\n");
+    }
 {%- elif solver_options.nlp_solver_type == "SQP_RTI" %}
     printf("iter\tqp_stat\tqp_iter\n");
     for (int i = 0; i < nrow; i++)

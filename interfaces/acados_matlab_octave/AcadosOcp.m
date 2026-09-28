@@ -1443,6 +1443,24 @@ classdef AcadosOcp < handle
                 end
             end
 
+            if strcmp(opts.nlp_solver_type, "FILTERDDP")
+                if opts.N_horizon == 0
+                    error('FILTERDDP solver only supported for N_horizon > 0.');
+                end
+                if ~strcmp(opts.qp_solver, "PARTIAL_CONDENSING_HPIPM") || (opts.qp_solver_cond_N ~= opts.N_horizon)
+                    error('FILTERDDP solver only supported for PARTIAL_CONDENSING_HPIPM with qp_solver_cond_N == N_horizon.');
+                end
+                if ~strcmp(opts.integrator_type, "DISCRETE")
+                    error('FILTERDDP solver only supported with DISCRETE integrator_type.');
+                end
+                if any([dims.nbx_e, dims.ng_e, dims.nphi_e, dims.nh_e])
+                    error('FILTERDDP solver does not support terminal constraints.')
+                end
+                if any([dims.ns, dims.ns_0, dims.ns_e, dims.nphi, dims.nphi_0, dims.nz])
+                    error('FILTERDDP solver does not support soft constraints, BGP constraints or algebraic variables.')
+                end
+            end
+
             if ~ismember(opts.qp_solver_t0_init, [0, 1, 2])
                 error('qp_solver_t0_init must be one of [0, 1, 2].');
             end

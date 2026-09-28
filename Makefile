@@ -58,6 +58,7 @@ OBJS += acados/ocp_nlp/ocp_nlp_dynamics_cont.o
 OBJS += acados/ocp_nlp/ocp_nlp_dynamics_disc.o
 OBJS += acados/ocp_nlp/ocp_nlp_sqp.o
 OBJS += acados/ocp_nlp/ocp_nlp_ddp.o
+OBJS += acados/ocp_nlp/ocp_nlp_filterddp.o
 OBJS += acados/ocp_nlp/ocp_nlp_sqp_rti.o
 OBJS += acados/ocp_nlp/ocp_nlp_sqp_with_feasible_qp.o
 OBJS += acados/ocp_nlp/ocp_nlp_reg_common.o

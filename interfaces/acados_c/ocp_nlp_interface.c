@@ -62,6 +62,7 @@
 #include "acados/ocp_nlp/ocp_nlp_sqp_with_feasible_qp.h"
 #include "acados/ocp_nlp/ocp_nlp_sqp_rti.h"
 #include "acados/ocp_nlp/ocp_nlp_ddp.h"
+#include "acados/ocp_nlp/ocp_nlp_filterddp.h"
 #include "acados/dense_qp/dense_qp_common.h"
 #include "acados/utils/mem.h"
 #include "acados/utils/strsep.h"
@@ -209,6 +210,9 @@ ocp_nlp_config *ocp_nlp_config_create(ocp_nlp_plan_t plan)
             break;
         case DDP:
             ocp_nlp_ddp_config_initialize_default(config);
+            break;
+        case FILTERDDP:
+            ocp_nlp_filterddp_config_initialize_default(config);
             break;
         case INVALID_NLP_SOLVER:
             printf("\nerror: ocp_nlp_config_create: forgot to initialize plan->nlp_solver\n");

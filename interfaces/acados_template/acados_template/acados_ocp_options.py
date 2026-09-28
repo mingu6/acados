@@ -486,14 +486,14 @@ class AcadosOcpOptions:
     @property
     def nlp_solver_type(self):
         """NLP solver.
-        String in ('SQP', 'SQP_RTI', 'DDP', 'SQP_WITH_FEASIBLE_QP').
+        String in ('SQP', 'SQP_RTI', 'DDP', 'SQP_WITH_FEASIBLE_QP', 'FILTERDDP').
         Default: 'SQP'.
         """
         return self.__nlp_solver_type
 
     @nlp_solver_type.setter
     def nlp_solver_type(self, nlp_solver_type):
-        nlp_solver_types = ('SQP', 'SQP_RTI', 'DDP', 'SQP_WITH_FEASIBLE_QP')
+        nlp_solver_types = ('SQP', 'SQP_RTI', 'DDP', 'SQP_WITH_FEASIBLE_QP', 'FILTERDDP')
         if nlp_solver_type in nlp_solver_types:
             self.__nlp_solver_type = nlp_solver_type
         else:

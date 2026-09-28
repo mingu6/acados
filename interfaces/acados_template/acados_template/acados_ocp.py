@@ -1375,6 +1375,32 @@ class AcadosOcp:
             if any([dims.ng_e, dims.nphi_e, dims.nh_e]):
                 raise ValueError('DDP only supports initial state constraints, got terminal constraints.')
 
+        if opts.nlp_solver_type == "FILTERDDP":
+            if opts.N_horizon == 0:
+                raise ValueError("FILTERDDP solver only supported for N_horizon > 0.")
+            if opts.qp_solver != "PARTIAL_CONDENSING_HPIPM" or opts.qp_solver_cond_N != opts.N_horizon:
+                raise ValueError(f'FILTERDDP solver only supported for PARTIAL_CONDENSING_HPIPM with qp_solver_cond_N == N, got qp solver {opts.qp_solver} and qp_solver_cond_N {opts.qp_solver_cond_N}, N {opts.N_horizon}.')
+            if opts.integrator_type != "DISCRETE":
+                raise NotImplementedError('FILTERDDP solver only supported with DISCRETE integrator_type.')
+            if opts.hessian_approx != "EXACT":
+                raise NotImplementedError('FILTERDDP solver requires hessian_approx == EXACT.')
+            if opts.regularize_method != "NO_REGULARIZE":
+                raise NotImplementedError('FILTERDDP solver performs its own inertia correction, use regularize_method == NO_REGULARIZE.')
+            if dims.nbx_0 != dims.nx or dims.nbxe_0 != dims.nx:
+                raise ValueError('FILTERDDP solver requires the initial state to be fixed, set constraints.x0.')
+            if any([dims.nbx_e, dims.ng_e, dims.nphi_e, dims.nh_e]):
+                raise ValueError('FILTERDDP solver does not support terminal constraints.')
+            if any([dims.nphi, dims.nphi_0]):
+                raise NotImplementedError('FILTERDDP solver does not support BGP constraints.')
+            if any([dims.ns, dims.ns_0, dims.ns_e]):
+                raise NotImplementedError('FILTERDDP solver does not support soft constraints.')
+            if dims.nz > 0:
+                raise NotImplementedError('FILTERDDP solver does not support algebraic variables.')
+            if not all([ct == "EXTERNAL" for ct in cost_types_to_check]):
+                raise NotImplementedError('FILTERDDP solver only supports EXTERNAL cost types.')
+            if opts.globalization != "FIXED_STEP":
+                raise NotImplementedError('FILTERDDP solver uses its own filter line search, set globalization == FIXED_STEP.')
+
         if opts.qpscaling_scale_constraints != "NO_CONSTRAINT_SCALING" or opts.qpscaling_scale_objective != "NO_OBJECTIVE_SCALING":
             if opts.nlp_solver_type == "SQP_RTI":
                 raise NotImplementedError('qpscaling_scale_constraints and qpscaling_scale_objective not supported for SQP_RTI solver.')

@@ -1341,6 +1341,33 @@ class AcadosOcpSolver:
                      qp_iter=int(stat[6][jj]),
                      alpha=stat[7][jj]))
             print('\n')
+        elif self.ocp.solver_options.nlp_solver_type == 'FILTERDDP':
+            for jj in range(stat.shape[1]):
+                if jj % 10 == 0:
+                    print(("{iter:>6} | {obj:>12} | {pr_inf:>10} | {du_inf:>10} | "
+                   "{cs_inf:>10} | {mu:>8} | {reg:>8} | {alpha:>10} | {ls:>3}").format(
+                        iter='iter.',
+                        obj='objective',
+                        pr_inf='pr_inf',
+                        du_inf='du_inf',
+                        cs_inf='cs_inf',
+                        mu='lg(mu)',
+                        reg='lg(reg)',
+                        alpha='alpha',
+                        ls='ls'))
+                reg = stat[6][jj]
+                print(("{iter:>6} | {obj:>12.6e} | {pr_inf:>10.4e} | {du_inf:>10.4e} | "
+                   "{cs_inf:>10.4e} | {mu:>8.2f} | {reg:>8} | {alpha:>10.4e} | {ls:>3}").format(
+                     iter=int(stat[0][jj]),
+                     du_inf=stat[1][jj],
+                     pr_inf=stat[2][jj],
+                     cs_inf=stat[3][jj],
+                     obj=stat[4][jj],
+                     mu=np.log10(stat[5][jj]) if stat[5][jj] > 0 else float('nan'),
+                     reg='-' if reg == 0.0 else '{:8.2f}'.format(np.log10(reg)),
+                     alpha=stat[7][jj],
+                     ls=int(stat[8][jj])))
+            print('\n')
         elif self.ocp.solver_options.nlp_solver_type == 'SQP_WITH_FEASIBLE_QP':
             print(("{iter:>5}   {stat:>10}   {res_eq:>10}   "
                    "{res_ineq:>10}   {res_comp:>10}   {qp1_status:>8}   {qp1_iter:>6}   "
