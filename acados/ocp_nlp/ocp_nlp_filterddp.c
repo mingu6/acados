@@ -2477,6 +2477,15 @@ int ocp_nlp_filterddp_precompute(void *config_, void *dims_, void *nlp_in_, void
         printf("ocp_nlp_filterddp: terminal constraints are not supported, got ni[N] = %d.\n", dims->ni[N]);
         exit(1);
     }
+    for (int i = 1; i <= N; i++)
+    {
+        if (dims->nx[i] != dims->nx[0] || (i < N && dims->nu[i] != dims->nu[0]))
+        {
+            printf("ocp_nlp_filterddp: stage dependent nx or nu (multi-phase OCPs) are not supported, got nx[%d] = %d, nu[%d] = %d.\n",
+                    i, dims->nx[i], i, dims->nu[i]);
+            exit(1);
+        }
+    }
     for (int i = 0; i <= N; i++)
     {
         if (dims->ns[i] > 0)
