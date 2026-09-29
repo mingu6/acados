@@ -61,6 +61,10 @@ if(ACADOS_OCTAVE)
         COMMAND "${CMAKE_COMMAND}" -E chdir ${PROJECT_SOURCE_DIR}/examples/acados_matlab_octave/test
         octave --no-gui --no-window-system ./run_test_ocp_pendulum.m)
 
+    add_test(NAME octave_test_filterddp
+        COMMAND "${CMAKE_COMMAND}" -E chdir ${PROJECT_SOURCE_DIR}/examples/acados_matlab_octave/filterddp
+        octave --no-gui --no-window-system ./test_filterddp.m)
+
     add_test(NAME octave_test_ocp_wtnx6
         COMMAND "${CMAKE_COMMAND}" -E chdir ${PROJECT_SOURCE_DIR}/examples/acados_matlab_octave/test
         octave --no-gui --no-window-system ./run_test_ocp_wtnx6.m)

@@ -143,6 +143,33 @@ classdef AcadosOcpOptions < handle
         custom_update_copy
         with_batch_functionality
 
+        % FILTERDDP, see the Python AcadosOcpOptions for the descriptions
+        filterddp_mu_init
+        filterddp_ineq_dual_init
+        filterddp_kappa_1
+        filterddp_kappa_2
+        filterddp_reg_1
+        filterddp_reg_min
+        filterddp_reg_max
+        filterddp_kappa_bar_w_p
+        filterddp_kappa_w_p
+        filterddp_kappa_w_m
+        filterddp_kappa_eps
+        filterddp_kappa_mu
+        filterddp_theta_mu
+        filterddp_tau_min
+        filterddp_s_max
+        filterddp_eta_L
+        filterddp_s_L
+        filterddp_delta
+        filterddp_s_theta
+        filterddp_gamma_theta
+        filterddp_gamma_L
+        filterddp_theta_max_factor
+        filterddp_theta_min_factor
+        filterddp_warm_start
+        filterddp_symmetric_value_hessian
+
         compile_interface
 
         % the following options are deprecated, use the corresponding options in AcadosCodeGenOptions instead
@@ -273,6 +300,32 @@ classdef AcadosOcpOptions < handle
             obj.custom_templates = [];
             obj.custom_update_copy = true;
             obj.with_batch_functionality = false;
+
+            obj.filterddp_mu_init = 1.0;
+            obj.filterddp_ineq_dual_init = 1.0;
+            obj.filterddp_kappa_1 = 0.01;
+            obj.filterddp_kappa_2 = 0.01;
+            obj.filterddp_reg_1 = 1e-4;
+            obj.filterddp_reg_min = 1e-20;
+            obj.filterddp_reg_max = 1e40;
+            obj.filterddp_kappa_bar_w_p = 100.0;
+            obj.filterddp_kappa_w_p = 8.0;
+            obj.filterddp_kappa_w_m = 1.0/3.0;
+            obj.filterddp_kappa_eps = 10.0;
+            obj.filterddp_kappa_mu = 0.2;
+            obj.filterddp_theta_mu = 1.2;
+            obj.filterddp_tau_min = 0.99;
+            obj.filterddp_s_max = 100.0;
+            obj.filterddp_eta_L = 1e-4;
+            obj.filterddp_s_L = 2.3;
+            obj.filterddp_delta = 1.0;
+            obj.filterddp_s_theta = 1.1;
+            obj.filterddp_gamma_theta = 1e-5;
+            obj.filterddp_gamma_L = 1e-5;
+            obj.filterddp_theta_max_factor = 1e6;
+            obj.filterddp_theta_min_factor = 1e-4;
+            obj.filterddp_warm_start = false;
+            obj.filterddp_symmetric_value_hessian = true;
 
             obj.compile_interface = []; % corresponds to automatic detection, possible values: true, false, []
 

@@ -114,6 +114,7 @@ typedef struct ocp_nlp_config
     void (*terminate)(void *config, void *mem, void *work);
 
     bool (*is_real_time_algorithm)();
+    void (*get_at_stage)(void *config_, void *dims, void *mem_, int stage, const char *field, void *return_value_);
 
 
     // config structs of submodules

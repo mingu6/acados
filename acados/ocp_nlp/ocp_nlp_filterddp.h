@@ -57,7 +57,7 @@ typedef struct
 {
     ocp_nlp_opts *nlp_opts;
 
-    double mu_init;             // barrier parameter initialization (scaled by objective scaling)
+    double mu_init;             // barrier parameter initialization
     double ineq_dual_init;      // initial value of bound multipliers
     double kappa_1;             // fraction-to-boundary parameters for interior initialization
     double kappa_2;
@@ -84,8 +84,8 @@ typedef struct
     double theta_max_factor;    // maximum constraint violation accepted by the filter, relative to initial
     double theta_min_factor;    // constraint violation threshold for the switching condition, relative to initial
 
-    int nlp_scaling;            // gradient based scaling of objective and constraints at the initial point
-    double nlp_scaling_max_gradient;
+    int warm_start;             // 1: initialize each solve from the shifted affine policy and final barrier parameter of the previous solve
+    int symmetric_value_hessian; // 1: symmetrise the value function Hessian after each stage
 
 } ocp_nlp_filterddp_opts;
 
@@ -155,6 +155,9 @@ typedef struct
     struct blasfeo_dvec *zsl_trial;
     struct blasfeo_dvec *zsu_trial;
 
+    // costate of the last backward pass, stages 0:N
+    struct blasfeo_dvec *costate;
+
     // update rules, feedforward in column 0, feedback in columns 1:nx
     struct blasfeo_dmat *alpha_beta;      // nu x (nx+1)
     struct blasfeo_dmat *alphas_betas;    // ng x (nx+1)
@@ -166,23 +169,23 @@ typedef struct
     struct blasfeo_dmat *chisu_zetasu;    // ng x (nx+1)
 
     // constraint scaling
-    struct blasfeo_dvec *h_scale;
-    struct blasfeo_dvec *g_scale;
-    double objective_scale;
 
     // filter
     double *filter;
     int filter_size;
     int filter_capacity;
+    int policy_valid;
 
     // iteration data
     double mu;
     double reg_last;
     double step_size;
     double objective;
-    double primal_inf;
-    double primal_inf_raw;
+    double primal_inf;          // max(eq_inf, ineq_inf)
+    double eq_inf;              // equality constraint violation
+    double ineq_inf;            // inequality constraint violation (slack residual)
     double dual_inf;
+    int stationarity_costate;   // 1: dual_inf is attained with the costate, 0: with the primal-dual value gradient
     double cs_inf_0;
     double cs_inf_mu;
     double barrier_lagrangian_curr;
@@ -226,6 +229,8 @@ typedef struct
     struct blasfeo_dmat Vxx;
     struct blasfeo_dvec lambda;
     struct blasfeo_dvec lambda_next;
+    struct blasfeo_dvec Vd;       // primal-dual value gradient, multiplier estimate of the stationarity measure
+    struct blasfeo_dvec Vd_next;
 
     // stage derivatives gathered from the qp_in linearization
     struct blasfeo_dmat fx;
@@ -237,7 +242,6 @@ typedef struct
     struct blasfeo_dvec lx;
     struct blasfeo_dvec lu;
     struct blasfeo_dvec h;
-    struct blasfeo_dvec h_scaled;
     struct blasfeo_dvec g;
     struct blasfeo_dvec q;
 
@@ -250,6 +254,7 @@ typedef struct
     struct blasfeo_dvec Qu;
     struct blasfeo_dvec Qs;
     struct blasfeo_dvec Lu;
+    struct blasfeo_dvec Lu_costate;
     struct blasfeo_dvec Ls;
 
     // bound terms
@@ -280,8 +285,6 @@ typedef struct
     struct blasfeo_dmat sol_tmp;
 
     // null space method
-    struct blasfeo_dmat hus;
-    struct blasfeo_dmat hxs;
     struct blasfeo_dmat lq;
     struct blasfeo_dmat Q;
     struct blasfeo_dmat Y;
@@ -329,6 +332,8 @@ int ocp_nlp_filterddp_precompute(void *config_, void *dims_, void *nlp_in_, void
                 void *opts_, void *mem_, void *work_);
 //
 void ocp_nlp_filterddp_get(void *config_, void *dims_, void *mem_, const char *field, void *return_value_);
+//
+void ocp_nlp_filterddp_get_at_stage(void *config_, void *dims_, void *mem_, int stage, const char *field, void *return_value_);
 
 #ifdef __cplusplus
 } /* extern "C" */

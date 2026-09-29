@@ -367,7 +367,7 @@ class AcadosOcpSolver:
         self.__qp_cost_fields = {'Q', 'R', 'S', 'q', 'r', 'zl', 'zu', 'Zl', 'Zu'}
         self.__qp_constraint_fields = {'C', 'D', 'lg', 'ug', 'lbx', 'ubx', 'lbu', 'ubu', 'lls', 'lus', 'lg_mask', 'ug_mask', 'lbx_mask', 'ubx_mask', 'lbu_mask', 'ubu_mask', 'lls_mask', 'lus_mask'}
         self.__qp_constraint_int_fields = {'idxs', 'idxb', 'idxs_rev', 'idxe'}
-        self.__qp_pc_hpipm_fields = {'P', 'K', 'Lr', 'p'}
+        self.__qp_pc_hpipm_fields = {'P', 'K', 'k', 'Lr', 'p'}
         self.__qp_pc_fields = {'pcond_Q', 'pcond_R', 'pcond_S', 'pcond_A', 'pcond_B', 'pcond_b', 'pcond_q', 'pcond_r', 'pcond_C', 'pcond_D', 'pcond_lg', 'pcond_ug', 'pcond_lbx', 'pcond_ubx', 'pcond_lbu', 'pcond_ubu'}
         self.__qp_fc_fields = {'fcond_H'}
         self.__all_qp_fields = self.__qp_dynamics_fields | self.__qp_cost_fields | self.__qp_constraint_fields | self.__qp_constraint_int_fields | self.__qp_pc_hpipm_fields | self.__qp_pc_fields | self.__qp_fc_fields
@@ -2292,7 +2292,8 @@ class AcadosOcpSolver:
         :param field: string in ['A', 'B', 'b', 'Q', 'R', 'S', 'q', 'r', 'C', 'D', 'lg', 'ug', 'lbx', 'ubx', 'lbu', 'ubu']
 
         Note:
-        - additional supported fields are ['P', 'K', 'Lr'], which can be extracted form QP solver PARTIAL_CONDENSING_HPIPM.
+        - additional supported fields are ['P', 'K', 'k', 'Lr'], which can be extracted form QP solver PARTIAL_CONDENSING_HPIPM.
+        - for nlp_solver_type FILTERDDP, 'K' and 'k' are the feedback gain and feedforward term of the affine policy of the last backward pass.
         - for PARTIAL_CONDENSING_* QP solvers, the following additional fields are available: ['pcond_Q', 'pcond_R', 'pcond_S', 'pcond_A', 'pcond_B', 'pcond_b', 'pcond_q', 'pcond_r', 'pcond_C', 'pcond_D', 'pcond_lg', 'pcond_ug', 'pcond_lbx', 'pcond_ubx', 'pcond_lbu', 'pcond_ubu']
         - for PARTIAL_CONDENSING_* QP solvers, the following additional fields are available: ['fcond_H']
 
@@ -2305,7 +2306,7 @@ class AcadosOcpSolver:
             raise ValueError(f"dynamics field {field_} not available at terminal stage")
         if field_ not in self.__all_qp_fields | self.__all_relaxed_qp_fields:
             raise ValueError(f"field {field_} not supported.")
-        if field_ in self.__qp_pc_hpipm_fields:
+        if field_ in self.__qp_pc_hpipm_fields and not (field_ in ('K', 'k') and self.ocp.solver_options.nlp_solver_type == 'FILTERDDP'):
             if self.ocp.solver_options.qp_solver != "PARTIAL_CONDENSING_HPIPM" or self.ocp.solver_options.qp_solver_cond_N != self.N:
                 raise ValueError(f"field {field_} only works for PARTIAL_CONDENSING_HPIPM QP solver with qp_solver_cond_N == N.")
             if field_ in ["P", "K", "p"] and stage_ == 0 and self.__nbxe_0 > 0:
@@ -2469,7 +2470,12 @@ class AcadosOcpSolver:
                 'anderson_activation_threshold',
                 'levenberg_marquardt',
                 'adaptive_levenberg_marquardt_lam', 'adaptive_levenberg_marquardt_mu_min', 'adaptive_levenberg_marquardt_mu0',
-                'tau_min'
+                'tau_min', 'filterddp_warm_start', 'filterddp_symmetric_value_hessian',
+                'filterddp_mu_init', 'filterddp_ineq_dual_init', 'filterddp_kappa_1', 'filterddp_kappa_2', 'filterddp_reg_1',
+                'filterddp_reg_min', 'filterddp_reg_max', 'filterddp_kappa_bar_w_p', 'filterddp_kappa_w_p', 'filterddp_kappa_w_m',
+                'filterddp_kappa_eps', 'filterddp_kappa_mu', 'filterddp_theta_mu', 'filterddp_tau_min', 'filterddp_s_max',
+                'filterddp_eta_L', 'filterddp_s_L', 'filterddp_delta', 'filterddp_s_theta', 'filterddp_gamma_theta',
+                'filterddp_gamma_L', 'filterddp_theta_max_factor', 'filterddp_theta_min_factor'
 
         :param value: of type int, float, string, bool
 
@@ -2493,7 +2499,9 @@ class AcadosOcpSolver:
                       'nlp_solver_max_iter',
                       'qp_warm_start',
                       'qp_print_level',
-                      'qp_t0_init']
+                      'qp_t0_init',
+                      'filterddp_warm_start',
+                      'filterddp_symmetric_value_hessian']
         double_fields = ['globalization_fixed_step_length',
                          'globalization_alpha_min',
                          'globalization_alpha_reduction',
@@ -2519,7 +2527,30 @@ class AcadosOcpSolver:
                          'qp_tol_comp',
                          'qp_tau_min',
                          'qp_mu0',
-                         'anderson_activation_threshold']
+                         'anderson_activation_threshold',
+                         'filterddp_mu_init',
+                         'filterddp_ineq_dual_init',
+                         'filterddp_kappa_1',
+                         'filterddp_kappa_2',
+                         'filterddp_reg_1',
+                         'filterddp_reg_min',
+                         'filterddp_reg_max',
+                         'filterddp_kappa_bar_w_p',
+                         'filterddp_kappa_w_p',
+                         'filterddp_kappa_w_m',
+                         'filterddp_kappa_eps',
+                         'filterddp_kappa_mu',
+                         'filterddp_theta_mu',
+                         'filterddp_tau_min',
+                         'filterddp_s_max',
+                         'filterddp_eta_L',
+                         'filterddp_s_L',
+                         'filterddp_delta',
+                         'filterddp_s_theta',
+                         'filterddp_gamma_theta',
+                         'filterddp_gamma_L',
+                         'filterddp_theta_max_factor',
+                         'filterddp_theta_min_factor']
         string_fields = []
         bool_fields = ['with_adaptive_levenberg_marquardt', 'warm_start_first_qp_from_nlp', 'warm_start_first_qp']
 

@@ -1078,6 +1078,11 @@ void ocp_nlp_qp_dims_get_from_attr(ocp_nlp_config *config, ocp_nlp_dims *dims, o
         dims_out[0] = 1;
         dims_out[1] = dims->nu[stage];
     }
+    else if (!strcmp(field, "k"))
+    {
+        dims_out[0] = dims->nu[stage];
+        dims_out[1] = 1;
+    }
     else if (!strcmp(field, "q") || !strcmp(field, "relaxed_q"))
     {
         dims_out[0] = 1;
@@ -1741,7 +1746,13 @@ void ocp_nlp_get_at_stage(ocp_nlp_solver *solver, int stage, const char *field, 
     ocp_nlp_memory *nlp_mem;
     config->get(config, dims, solver->mem, "nlp_mem", &nlp_mem);
 
-    if (!strcmp(field, "P") || !strcmp(field, "K") || !strcmp(field, "Lr") || !strcmp(field, "p"))
+    if (config->get_at_stage != NULL && (!strcmp(field, "K") || !strcmp(field, "k")))
+    {
+        config->get_at_stage(config, dims, solver->mem, stage, field, value);
+        return;
+    }
+
+    if (!strcmp(field, "P") || !strcmp(field, "K") || !strcmp(field, "k") || !strcmp(field, "Lr") || !strcmp(field, "p"))
     {
         ocp_nlp_opts *nlp_opts;
         config->opts_get(config, solver->opts, "nlp_opts", &nlp_opts);
@@ -1763,6 +1774,11 @@ void ocp_nlp_get_at_stage(ocp_nlp_solver *solver, int stage, const char *field, 
         else if (!strcmp(field, "p"))
         {
             size1 = dims->nx[stage];
+            size2 = 1;
+        }
+        else if (!strcmp(field, "k"))
+        {
+            size1 = dims->nu[stage];
             size2 = 1;
         }
         else if (!strcmp(field, "Lr"))

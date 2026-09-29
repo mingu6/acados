@@ -153,6 +153,33 @@ class AcadosOcpOptions:
 
         self.__with_batch_functionality: bool = False
 
+        # FILTERDDP
+        self.__filterddp_mu_init = 1.0
+        self.__filterddp_ineq_dual_init = 1.0
+        self.__filterddp_kappa_1 = 0.01
+        self.__filterddp_kappa_2 = 0.01
+        self.__filterddp_reg_1 = 1e-4
+        self.__filterddp_reg_min = 1e-20
+        self.__filterddp_reg_max = 1e40
+        self.__filterddp_kappa_bar_w_p = 100.0
+        self.__filterddp_kappa_w_p = 8.0
+        self.__filterddp_kappa_w_m = 0.3333333333333333
+        self.__filterddp_kappa_eps = 10.0
+        self.__filterddp_kappa_mu = 0.2
+        self.__filterddp_theta_mu = 1.2
+        self.__filterddp_tau_min = 0.99
+        self.__filterddp_s_max = 100.0
+        self.__filterddp_eta_L = 1e-4
+        self.__filterddp_s_L = 2.3
+        self.__filterddp_delta = 1.0
+        self.__filterddp_s_theta = 1.1
+        self.__filterddp_gamma_theta = 1e-5
+        self.__filterddp_gamma_L = 1e-5
+        self.__filterddp_theta_max_factor = 1e6
+        self.__filterddp_theta_min_factor = 1e-4
+        self.__filterddp_warm_start = False
+        self.__filterddp_symmetric_value_hessian = True
+
         # TODO: remove those once deprecated fields are removed
         env = os.environ
         self.__ext_fun_compile_flags = '-O2' if 'ACADOS_EXT_FUN_COMPILE_FLAGS' not in env else env['ACADOS_EXT_FUN_COMPILE_FLAGS']
@@ -2343,6 +2370,429 @@ class AcadosOcpOptions:
         else:
             raise TypeError('Invalid with_batch_functionality value. Expected bool.')
 
+
+    @property
+    def filterddp_mu_init(self):
+        """
+        FILTERDDP: Initial barrier parameter [mu_init].
+        Must be greater than 0.
+
+        Default: 1.0
+        """
+        return self.__filterddp_mu_init
+
+    @filterddp_mu_init.setter
+    def filterddp_mu_init(self, filterddp_mu_init):
+        if isinstance(filterddp_mu_init, (float, int)) and not isinstance(filterddp_mu_init, bool) and filterddp_mu_init > 0:
+            self.__filterddp_mu_init = float(filterddp_mu_init)
+        else:
+            raise ValueError('Invalid filterddp_mu_init value. filterddp_mu_init must be a float greater than 0.')
+
+    @property
+    def filterddp_ineq_dual_init(self):
+        """
+        FILTERDDP: Initial value of the bound multipliers [bound_mult_init_val].
+        Must be greater than 0.
+
+        Default: 1.0
+        """
+        return self.__filterddp_ineq_dual_init
+
+    @filterddp_ineq_dual_init.setter
+    def filterddp_ineq_dual_init(self, filterddp_ineq_dual_init):
+        if isinstance(filterddp_ineq_dual_init, (float, int)) and not isinstance(filterddp_ineq_dual_init, bool) and filterddp_ineq_dual_init > 0:
+            self.__filterddp_ineq_dual_init = float(filterddp_ineq_dual_init)
+        else:
+            raise ValueError('Invalid filterddp_ineq_dual_init value. filterddp_ineq_dual_init must be a float greater than 0.')
+
+    @property
+    def filterddp_kappa_1(self):
+        """
+        FILTERDDP: Absolute distance of the initial controls and slacks from their bounds, relative to max(1, |bound|) [bound_push].
+        Must be greater than 0.
+
+        Default: 0.01
+        """
+        return self.__filterddp_kappa_1
+
+    @filterddp_kappa_1.setter
+    def filterddp_kappa_1(self, filterddp_kappa_1):
+        if isinstance(filterddp_kappa_1, (float, int)) and not isinstance(filterddp_kappa_1, bool) and filterddp_kappa_1 > 0:
+            self.__filterddp_kappa_1 = float(filterddp_kappa_1)
+        else:
+            raise ValueError('Invalid filterddp_kappa_1 value. filterddp_kappa_1 must be a float greater than 0.')
+
+    @property
+    def filterddp_kappa_2(self):
+        """
+        FILTERDDP: Distance of the initial controls and slacks from their bounds, relative to the distance between the bounds [bound_frac].
+        Must be greater than 0 and less than 0.5.
+
+        Default: 0.01
+        """
+        return self.__filterddp_kappa_2
+
+    @filterddp_kappa_2.setter
+    def filterddp_kappa_2(self, filterddp_kappa_2):
+        if isinstance(filterddp_kappa_2, (float, int)) and not isinstance(filterddp_kappa_2, bool) and filterddp_kappa_2 > 0 and filterddp_kappa_2 < 0.5:
+            self.__filterddp_kappa_2 = float(filterddp_kappa_2)
+        else:
+            raise ValueError('Invalid filterddp_kappa_2 value. filterddp_kappa_2 must be a float greater than 0 and less than 0.5.')
+
+    @property
+    def filterddp_reg_1(self):
+        """
+        FILTERDDP: Initial inertia correction regularization [first_hessian_perturbation].
+        Must be greater than 0.
+
+        Default: 1e-4
+        """
+        return self.__filterddp_reg_1
+
+    @filterddp_reg_1.setter
+    def filterddp_reg_1(self, filterddp_reg_1):
+        if isinstance(filterddp_reg_1, (float, int)) and not isinstance(filterddp_reg_1, bool) and filterddp_reg_1 > 0:
+            self.__filterddp_reg_1 = float(filterddp_reg_1)
+        else:
+            raise ValueError('Invalid filterddp_reg_1 value. filterddp_reg_1 must be a float greater than 0.')
+
+    @property
+    def filterddp_reg_min(self):
+        """
+        FILTERDDP: Smallest inertia correction regularization [min_hessian_perturbation].
+        Must be greater than 0.
+
+        Default: 1e-20
+        """
+        return self.__filterddp_reg_min
+
+    @filterddp_reg_min.setter
+    def filterddp_reg_min(self, filterddp_reg_min):
+        if isinstance(filterddp_reg_min, (float, int)) and not isinstance(filterddp_reg_min, bool) and filterddp_reg_min > 0:
+            self.__filterddp_reg_min = float(filterddp_reg_min)
+        else:
+            raise ValueError('Invalid filterddp_reg_min value. filterddp_reg_min must be a float greater than 0.')
+
+    @property
+    def filterddp_reg_max(self):
+        """
+        FILTERDDP: Largest inertia correction regularization, above which the backward pass fails [max_hessian_perturbation].
+        Must be greater than 0.
+
+        Default: 1e40
+        """
+        return self.__filterddp_reg_max
+
+    @filterddp_reg_max.setter
+    def filterddp_reg_max(self, filterddp_reg_max):
+        if isinstance(filterddp_reg_max, (float, int)) and not isinstance(filterddp_reg_max, bool) and filterddp_reg_max > 0:
+            self.__filterddp_reg_max = float(filterddp_reg_max)
+        else:
+            raise ValueError('Invalid filterddp_reg_max value. filterddp_reg_max must be a float greater than 0.')
+
+    @property
+    def filterddp_kappa_bar_w_p(self):
+        """
+        FILTERDDP: Increase factor of the inertia correction regularization if there was none in the previous iteration [perturb_inc_fact_first].
+        Must be greater than 1.
+
+        Default: 100.0
+        """
+        return self.__filterddp_kappa_bar_w_p
+
+    @filterddp_kappa_bar_w_p.setter
+    def filterddp_kappa_bar_w_p(self, filterddp_kappa_bar_w_p):
+        if isinstance(filterddp_kappa_bar_w_p, (float, int)) and not isinstance(filterddp_kappa_bar_w_p, bool) and filterddp_kappa_bar_w_p > 1:
+            self.__filterddp_kappa_bar_w_p = float(filterddp_kappa_bar_w_p)
+        else:
+            raise ValueError('Invalid filterddp_kappa_bar_w_p value. filterddp_kappa_bar_w_p must be a float greater than 1.')
+
+    @property
+    def filterddp_kappa_w_p(self):
+        """
+        FILTERDDP: Increase factor of the inertia correction regularization [perturb_inc_fact].
+        Must be greater than 1.
+
+        Default: 8.0
+        """
+        return self.__filterddp_kappa_w_p
+
+    @filterddp_kappa_w_p.setter
+    def filterddp_kappa_w_p(self, filterddp_kappa_w_p):
+        if isinstance(filterddp_kappa_w_p, (float, int)) and not isinstance(filterddp_kappa_w_p, bool) and filterddp_kappa_w_p > 1:
+            self.__filterddp_kappa_w_p = float(filterddp_kappa_w_p)
+        else:
+            raise ValueError('Invalid filterddp_kappa_w_p value. filterddp_kappa_w_p must be a float greater than 1.')
+
+    @property
+    def filterddp_kappa_w_m(self):
+        """
+        FILTERDDP: Decrease factor of the inertia correction regularization [perturb_dec_fact].
+        Must be greater than 0 and less than 1.
+
+        Default: 0.3333333333333333
+        """
+        return self.__filterddp_kappa_w_m
+
+    @filterddp_kappa_w_m.setter
+    def filterddp_kappa_w_m(self, filterddp_kappa_w_m):
+        if isinstance(filterddp_kappa_w_m, (float, int)) and not isinstance(filterddp_kappa_w_m, bool) and filterddp_kappa_w_m > 0 and filterddp_kappa_w_m < 1:
+            self.__filterddp_kappa_w_m = float(filterddp_kappa_w_m)
+        else:
+            raise ValueError('Invalid filterddp_kappa_w_m value. filterddp_kappa_w_m must be a float greater than 0 and less than 1.')
+
+    @property
+    def filterddp_kappa_eps(self):
+        """
+        FILTERDDP: The barrier parameter is decreased once the barrier problem error is below kappa_eps*mu [barrier_tol_factor].
+        Must be greater than 0.
+
+        Default: 10.0
+        """
+        return self.__filterddp_kappa_eps
+
+    @filterddp_kappa_eps.setter
+    def filterddp_kappa_eps(self, filterddp_kappa_eps):
+        if isinstance(filterddp_kappa_eps, (float, int)) and not isinstance(filterddp_kappa_eps, bool) and filterddp_kappa_eps > 0:
+            self.__filterddp_kappa_eps = float(filterddp_kappa_eps)
+        else:
+            raise ValueError('Invalid filterddp_kappa_eps value. filterddp_kappa_eps must be a float greater than 0.')
+
+    @property
+    def filterddp_kappa_mu(self):
+        """
+        FILTERDDP: Linear decrease factor of the barrier parameter [mu_linear_decrease_factor].
+        Must be greater than 0 and less than 1.
+
+        Default: 0.2
+        """
+        return self.__filterddp_kappa_mu
+
+    @filterddp_kappa_mu.setter
+    def filterddp_kappa_mu(self, filterddp_kappa_mu):
+        if isinstance(filterddp_kappa_mu, (float, int)) and not isinstance(filterddp_kappa_mu, bool) and filterddp_kappa_mu > 0 and filterddp_kappa_mu < 1:
+            self.__filterddp_kappa_mu = float(filterddp_kappa_mu)
+        else:
+            raise ValueError('Invalid filterddp_kappa_mu value. filterddp_kappa_mu must be a float greater than 0 and less than 1.')
+
+    @property
+    def filterddp_theta_mu(self):
+        """
+        FILTERDDP: Superlinear decrease exponent of the barrier parameter [mu_superlinear_decrease_power].
+        Must be greater than 1 and less than 2.
+
+        Default: 1.2
+        """
+        return self.__filterddp_theta_mu
+
+    @filterddp_theta_mu.setter
+    def filterddp_theta_mu(self, filterddp_theta_mu):
+        if isinstance(filterddp_theta_mu, (float, int)) and not isinstance(filterddp_theta_mu, bool) and filterddp_theta_mu > 1 and filterddp_theta_mu < 2:
+            self.__filterddp_theta_mu = float(filterddp_theta_mu)
+        else:
+            raise ValueError('Invalid filterddp_theta_mu value. filterddp_theta_mu must be a float greater than 1 and less than 2.')
+
+    @property
+    def filterddp_tau_min(self):
+        """
+        FILTERDDP: Lower bound on the fraction-to-the-boundary parameter [tau_min].
+        Must be greater than 0 and less than 1.
+
+        Default: 0.99
+        """
+        return self.__filterddp_tau_min
+
+    @filterddp_tau_min.setter
+    def filterddp_tau_min(self, filterddp_tau_min):
+        if isinstance(filterddp_tau_min, (float, int)) and not isinstance(filterddp_tau_min, bool) and filterddp_tau_min > 0 and filterddp_tau_min < 1:
+            self.__filterddp_tau_min = float(filterddp_tau_min)
+        else:
+            raise ValueError('Invalid filterddp_tau_min value. filterddp_tau_min must be a float greater than 0 and less than 1.')
+
+    @property
+    def filterddp_s_max(self):
+        """
+        FILTERDDP: Threshold on the average multiplier magnitude above which the stationarity and complementarity errors are scaled [s_max].
+        Must be at least 1.
+
+        Default: 100.0
+        """
+        return self.__filterddp_s_max
+
+    @filterddp_s_max.setter
+    def filterddp_s_max(self, filterddp_s_max):
+        if isinstance(filterddp_s_max, (float, int)) and not isinstance(filterddp_s_max, bool) and filterddp_s_max >= 1:
+            self.__filterddp_s_max = float(filterddp_s_max)
+        else:
+            raise ValueError('Invalid filterddp_s_max value. filterddp_s_max must be a float at least 1.')
+
+    @property
+    def filterddp_eta_L(self):
+        """
+        FILTERDDP: Relaxation factor of the Armijo condition [eta_phi].
+        Must be greater than 0 and less than 0.5.
+
+        Default: 1e-4
+        """
+        return self.__filterddp_eta_L
+
+    @filterddp_eta_L.setter
+    def filterddp_eta_L(self, filterddp_eta_L):
+        if isinstance(filterddp_eta_L, (float, int)) and not isinstance(filterddp_eta_L, bool) and filterddp_eta_L > 0 and filterddp_eta_L < 0.5:
+            self.__filterddp_eta_L = float(filterddp_eta_L)
+        else:
+            raise ValueError('Invalid filterddp_eta_L value. filterddp_eta_L must be a float greater than 0 and less than 0.5.')
+
+    @property
+    def filterddp_s_L(self):
+        """
+        FILTERDDP: Exponent of the barrier function model in the switching condition [s_phi].
+        Must be greater than 1.
+
+        Default: 2.3
+        """
+        return self.__filterddp_s_L
+
+    @filterddp_s_L.setter
+    def filterddp_s_L(self, filterddp_s_L):
+        if isinstance(filterddp_s_L, (float, int)) and not isinstance(filterddp_s_L, bool) and filterddp_s_L > 1:
+            self.__filterddp_s_L = float(filterddp_s_L)
+        else:
+            raise ValueError('Invalid filterddp_s_L value. filterddp_s_L must be a float greater than 1.')
+
+    @property
+    def filterddp_delta(self):
+        """
+        FILTERDDP: Multiplier of the constraint violation in the switching condition [delta].
+        Must be greater than 0.
+
+        Default: 1.0
+        """
+        return self.__filterddp_delta
+
+    @filterddp_delta.setter
+    def filterddp_delta(self, filterddp_delta):
+        if isinstance(filterddp_delta, (float, int)) and not isinstance(filterddp_delta, bool) and filterddp_delta > 0:
+            self.__filterddp_delta = float(filterddp_delta)
+        else:
+            raise ValueError('Invalid filterddp_delta value. filterddp_delta must be a float greater than 0.')
+
+    @property
+    def filterddp_s_theta(self):
+        """
+        FILTERDDP: Exponent of the constraint violation in the switching condition [s_theta].
+        Must be greater than 1.
+
+        Default: 1.1
+        """
+        return self.__filterddp_s_theta
+
+    @filterddp_s_theta.setter
+    def filterddp_s_theta(self, filterddp_s_theta):
+        if isinstance(filterddp_s_theta, (float, int)) and not isinstance(filterddp_s_theta, bool) and filterddp_s_theta > 1:
+            self.__filterddp_s_theta = float(filterddp_s_theta)
+        else:
+            raise ValueError('Invalid filterddp_s_theta value. filterddp_s_theta must be a float greater than 1.')
+
+    @property
+    def filterddp_gamma_theta(self):
+        """
+        FILTERDDP: Filter margin of the constraint violation [gamma_theta].
+        Must be greater than 0 and less than 1.
+
+        Default: 1e-5
+        """
+        return self.__filterddp_gamma_theta
+
+    @filterddp_gamma_theta.setter
+    def filterddp_gamma_theta(self, filterddp_gamma_theta):
+        if isinstance(filterddp_gamma_theta, (float, int)) and not isinstance(filterddp_gamma_theta, bool) and filterddp_gamma_theta > 0 and filterddp_gamma_theta < 1:
+            self.__filterddp_gamma_theta = float(filterddp_gamma_theta)
+        else:
+            raise ValueError('Invalid filterddp_gamma_theta value. filterddp_gamma_theta must be a float greater than 0 and less than 1.')
+
+    @property
+    def filterddp_gamma_L(self):
+        """
+        FILTERDDP: Filter margin of the barrier function [gamma_phi].
+        Must be greater than 0 and less than 1.
+
+        Default: 1e-5
+        """
+        return self.__filterddp_gamma_L
+
+    @filterddp_gamma_L.setter
+    def filterddp_gamma_L(self, filterddp_gamma_L):
+        if isinstance(filterddp_gamma_L, (float, int)) and not isinstance(filterddp_gamma_L, bool) and filterddp_gamma_L > 0 and filterddp_gamma_L < 1:
+            self.__filterddp_gamma_L = float(filterddp_gamma_L)
+        else:
+            raise ValueError('Invalid filterddp_gamma_L value. filterddp_gamma_L must be a float greater than 0 and less than 1.')
+
+    @property
+    def filterddp_theta_max_factor(self):
+        """
+        FILTERDDP: Largest constraint violation accepted by the filter, relative to max(1, initial violation) [constr_viol_max, relative].
+        Must be greater than 0.
+
+        Default: 1e6
+        """
+        return self.__filterddp_theta_max_factor
+
+    @filterddp_theta_max_factor.setter
+    def filterddp_theta_max_factor(self, filterddp_theta_max_factor):
+        if isinstance(filterddp_theta_max_factor, (float, int)) and not isinstance(filterddp_theta_max_factor, bool) and filterddp_theta_max_factor > 0:
+            self.__filterddp_theta_max_factor = float(filterddp_theta_max_factor)
+        else:
+            raise ValueError('Invalid filterddp_theta_max_factor value. filterddp_theta_max_factor must be a float greater than 0.')
+
+    @property
+    def filterddp_theta_min_factor(self):
+        """
+        FILTERDDP: Constraint violation below which the switching condition applies, relative to max(1, initial violation).
+        Must be greater than 0.
+
+        Default: 1e-4
+        """
+        return self.__filterddp_theta_min_factor
+
+    @filterddp_theta_min_factor.setter
+    def filterddp_theta_min_factor(self, filterddp_theta_min_factor):
+        if isinstance(filterddp_theta_min_factor, (float, int)) and not isinstance(filterddp_theta_min_factor, bool) and filterddp_theta_min_factor > 0:
+            self.__filterddp_theta_min_factor = float(filterddp_theta_min_factor)
+        else:
+            raise ValueError('Invalid filterddp_theta_min_factor value. filterddp_theta_min_factor must be a float greater than 0.')
+
+    @property
+    def filterddp_warm_start(self):
+        """
+        FILTERDDP: Initialize each solve from the affine policy of the previous solve, rolled out from the new initial state and shifted by one stage, and continue from its final barrier parameter. Falls back to the initialization from the current iterate if there is no previous solve or the rollout fails.
+
+        Default: False
+        """
+        return self.__filterddp_warm_start
+
+    @filterddp_warm_start.setter
+    def filterddp_warm_start(self, filterddp_warm_start):
+        if isinstance(filterddp_warm_start, bool):
+            self.__filterddp_warm_start = filterddp_warm_start
+        else:
+            raise TypeError('Invalid filterddp_warm_start value. Expected bool.')
+
+    @property
+    def filterddp_symmetric_value_hessian(self):
+        """
+        FILTERDDP: Symmetrize the value function Hessian at each stage of the backward pass; the recursion amplifies rounding asymmetry for unstable dynamics.
+
+        Default: True
+        """
+        return self.__filterddp_symmetric_value_hessian
+
+    @filterddp_symmetric_value_hessian.setter
+    def filterddp_symmetric_value_hessian(self, filterddp_symmetric_value_hessian):
+        if isinstance(filterddp_symmetric_value_hessian, bool):
+            self.__filterddp_symmetric_value_hessian = filterddp_symmetric_value_hessian
+        else:
+            raise TypeError('Invalid filterddp_symmetric_value_hessian value. Expected bool.')
 
     def set(self, attr, value):
         setattr(self, attr, value)
