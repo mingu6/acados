@@ -1,0 +1,7 @@
+c_generated_code*/
+*_ocp.json
+output*/
+data/
+__pycache__/
+.quadruped_env.lock
+DEV_NOTES.md
