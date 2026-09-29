@@ -1,0 +1,13 @@
+# conda env create -f environment.yml
+# then: pip install --no-deps -e ../../../../interfaces/acados_template
+# and export ACADOS_SOURCE_DIR / LD_LIBRARY_PATH to this acados tree (README.md).
+name: waypoint-flight-acados
+channels:
+  - conda-forge
+dependencies:
+  - python =3.12
+  - casadi =3.7.2  # bundles IPOPT for the reference solve
+  - numpy
+  - matplotlib
+  - cython
+  - Deprecated
