@@ -2768,52 +2768,53 @@ static void {{ name }}_acados_create_set_opts({{ name }}_solver_capsule* capsule
 {%- endif %}
 
 {% if solver_options.nlp_solver_type == "FILTERDDP" %}
-    // set FILTERDDP specific options
-    double filterddp_mu_init = {{ solver_options.filterddp_mu_init }};
+    // set FILTERDDP specific options; the e0 suffix keeps integer-valued doubles, which the renderer
+    // prints without a decimal point (reg_max = 1e40 as 1 and 40 zeros), valid double literals
+    double filterddp_mu_init = {{ solver_options.filterddp_mu_init }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_mu_init", &filterddp_mu_init);
-    double filterddp_ineq_dual_init = {{ solver_options.filterddp_ineq_dual_init }};
+    double filterddp_ineq_dual_init = {{ solver_options.filterddp_ineq_dual_init }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_ineq_dual_init", &filterddp_ineq_dual_init);
-    double filterddp_kappa_1 = {{ solver_options.filterddp_kappa_1 }};
+    double filterddp_kappa_1 = {{ solver_options.filterddp_kappa_1 }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_1", &filterddp_kappa_1);
-    double filterddp_kappa_2 = {{ solver_options.filterddp_kappa_2 }};
+    double filterddp_kappa_2 = {{ solver_options.filterddp_kappa_2 }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_2", &filterddp_kappa_2);
-    double filterddp_reg_1 = {{ solver_options.filterddp_reg_1 }};
+    double filterddp_reg_1 = {{ solver_options.filterddp_reg_1 }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_reg_1", &filterddp_reg_1);
-    double filterddp_reg_min = {{ solver_options.filterddp_reg_min }};
+    double filterddp_reg_min = {{ solver_options.filterddp_reg_min }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_reg_min", &filterddp_reg_min);
-    double filterddp_reg_max = {{ solver_options.filterddp_reg_max }};
+    double filterddp_reg_max = {{ solver_options.filterddp_reg_max }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_reg_max", &filterddp_reg_max);
-    double filterddp_kappa_bar_w_p = {{ solver_options.filterddp_kappa_bar_w_p }};
+    double filterddp_kappa_bar_w_p = {{ solver_options.filterddp_kappa_bar_w_p }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_bar_w_p", &filterddp_kappa_bar_w_p);
-    double filterddp_kappa_w_p = {{ solver_options.filterddp_kappa_w_p }};
+    double filterddp_kappa_w_p = {{ solver_options.filterddp_kappa_w_p }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_w_p", &filterddp_kappa_w_p);
-    double filterddp_kappa_w_m = {{ solver_options.filterddp_kappa_w_m }};
+    double filterddp_kappa_w_m = {{ solver_options.filterddp_kappa_w_m }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_w_m", &filterddp_kappa_w_m);
-    double filterddp_kappa_eps = {{ solver_options.filterddp_kappa_eps }};
+    double filterddp_kappa_eps = {{ solver_options.filterddp_kappa_eps }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_eps", &filterddp_kappa_eps);
-    double filterddp_kappa_mu = {{ solver_options.filterddp_kappa_mu }};
+    double filterddp_kappa_mu = {{ solver_options.filterddp_kappa_mu }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_mu", &filterddp_kappa_mu);
-    double filterddp_theta_mu = {{ solver_options.filterddp_theta_mu }};
+    double filterddp_theta_mu = {{ solver_options.filterddp_theta_mu }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_theta_mu", &filterddp_theta_mu);
-    double filterddp_tau_min = {{ solver_options.filterddp_tau_min }};
+    double filterddp_tau_min = {{ solver_options.filterddp_tau_min }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_tau_min", &filterddp_tau_min);
-    double filterddp_s_max = {{ solver_options.filterddp_s_max }};
+    double filterddp_s_max = {{ solver_options.filterddp_s_max }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_s_max", &filterddp_s_max);
-    double filterddp_eta_L = {{ solver_options.filterddp_eta_L }};
+    double filterddp_eta_L = {{ solver_options.filterddp_eta_L }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_eta_L", &filterddp_eta_L);
-    double filterddp_s_L = {{ solver_options.filterddp_s_L }};
+    double filterddp_s_L = {{ solver_options.filterddp_s_L }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_s_L", &filterddp_s_L);
-    double filterddp_delta = {{ solver_options.filterddp_delta }};
+    double filterddp_delta = {{ solver_options.filterddp_delta }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_delta", &filterddp_delta);
-    double filterddp_s_theta = {{ solver_options.filterddp_s_theta }};
+    double filterddp_s_theta = {{ solver_options.filterddp_s_theta }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_s_theta", &filterddp_s_theta);
-    double filterddp_gamma_theta = {{ solver_options.filterddp_gamma_theta }};
+    double filterddp_gamma_theta = {{ solver_options.filterddp_gamma_theta }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_gamma_theta", &filterddp_gamma_theta);
-    double filterddp_gamma_L = {{ solver_options.filterddp_gamma_L }};
+    double filterddp_gamma_L = {{ solver_options.filterddp_gamma_L }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_gamma_L", &filterddp_gamma_L);
-    double filterddp_theta_max_factor = {{ solver_options.filterddp_theta_max_factor }};
+    double filterddp_theta_max_factor = {{ solver_options.filterddp_theta_max_factor }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_theta_max_factor", &filterddp_theta_max_factor);
-    double filterddp_theta_min_factor = {{ solver_options.filterddp_theta_min_factor }};
+    double filterddp_theta_min_factor = {{ solver_options.filterddp_theta_min_factor }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_theta_min_factor", &filterddp_theta_min_factor);
     int filterddp_warm_start = {{ solver_options.filterddp_warm_start }};
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_warm_start", &filterddp_warm_start);
