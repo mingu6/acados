@@ -149,6 +149,7 @@ void ocp_nlp_filterddp_opts_initialize_default(void *config_, void *dims_, void 
 
     opts->nlp_scaling = 0;
     opts->nlp_scaling_max_gradient = 100.0;
+    opts->warm_start = 0;
     opts->symmetric_value_hessian = 1;
 
     return;
@@ -284,6 +285,10 @@ void ocp_nlp_filterddp_opts_set(void *config_, void *opts_, const char *field, v
     else if (!strcmp(field, "filterddp_nlp_scaling_max_gradient"))
     {
         opts->nlp_scaling_max_gradient = *(double *) value;
+    }
+    else if (!strcmp(field, "filterddp_warm_start"))
+    {
+        opts->warm_start = *(int *) value;
     }
     else if (!strcmp(field, "filterddp_symmetric_value_hessian"))
     {
@@ -541,6 +546,7 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
 
     mem->objective_scale = 1.0;
     mem->filter_size = 0;
+    mem->policy_valid = 0;
     mem->nlp_mem->status = ACADOS_READY;
 
     align_char_to(8, &c_ptr);
@@ -2072,6 +2078,94 @@ static void filterddp_accept_trial(ocp_nlp_dims *dims, ocp_nlp_out *out, ocp_nlp
  * output
  ************************************************/
 
+/*
+ * Warm start: initialize the iterate from the affine update rules of the previous solve shifted by one
+ * stage, u_i = u_{i+1} + alpha_{i+1} + beta_{i+1} (x_i - x_{i+1}), rolled out from the new initial state,
+ * with the same rules for slacks and multipliers. The last stage repeats the rule of stage N-1.
+ */
+static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, ocp_nlp_in *in,
+        ocp_nlp_out *out, ocp_nlp_out *trial, ocp_nlp_filterddp_opts *opts, ocp_nlp_filterddp_memory *mem,
+        ocp_nlp_filterddp_workspace *work)
+{
+    ocp_nlp_opts *nlp_opts = opts->nlp_opts;
+    ocp_nlp_memory *nlp_mem = mem->nlp_mem;
+    ocp_nlp_workspace *nlp_work = work->nlp_work;
+    int N = dims->N;
+    int *nx = dims->nx;
+    int *nu = dims->nu;
+    const double dual_floor = 1e-3;
+
+    for (int i = 0; i < N-1; i++)
+    {
+        if (nx[i] != nx[i+1] || nu[i] != nu[i+1] || mem->nh[i] != mem->nh[i+1] || mem->ng[i] != mem->ng[i+1])
+            return 0;
+    }
+    if (nx[N] != nx[N-1])
+        return 0;
+
+    ocp_nlp_constraints_bgh_model *model0 = in->constraints[0];
+    ocp_nlp_constraints_bgh_dims *cdims0 = dims->constraints[0];
+    blasfeo_dveccp(nx[0], out->ux+0, nu[0], trial->ux+0, nu[0]);
+    for (int j = 0; j < cdims0->nbx; j++)
+    {
+        int col = model0->idxb[cdims0->nbu+j];
+        VEL(trial->ux+0, col) = VEL(&model0->d, cdims0->nbu+j);
+    }
+
+    int ok = 1;
+    for (int i = 0; i < N && ok; i++)
+    {
+        int k = i+1 < N ? i+1 : N-1;
+        int nxi = nx[i];
+        int nui = nu[i];
+        int nhi = mem->nh[i];
+        int ngi = mem->ng[i];
+
+        for (int j = 0; j < nxi; j++)
+            VEL(&work->xi, j) = VEL(trial->ux+i, nui+j) - VEL(out->ux+k, nui+j);
+        filterddp_apply_rule(nui, nxi, out->ux+k, 0, 1.0, mem->alpha_beta+k, &work->xi, trial->ux+i, 0);
+        filterddp_apply_rule(nhi, nxi, mem->phi+k, 0, 1.0, mem->psih_omegah+k, &work->xi, mem->phi_trial+i, 0);
+        filterddp_apply_rule(nui, nxi, mem->zl+k, 0, 1.0, mem->chil_zetal+k, &work->xi, mem->zl_trial+i, 0);
+        filterddp_apply_rule(nui, nxi, mem->zu+k, 0, 1.0, mem->chiu_zetau+k, &work->xi, mem->zu_trial+i, 0);
+        if (ngi > 0)
+        {
+            filterddp_apply_rule(ngi, nxi, mem->s+k, 0, 1.0, mem->alphas_betas+k, &work->xi, mem->s_trial+i, 0);
+            filterddp_apply_rule(ngi, nxi, mem->nu+k, 0, 1.0, mem->psig_omegag+k, &work->xi, mem->nu_trial+i, 0);
+            filterddp_apply_rule(ngi, nxi, mem->zsl+k, 0, 1.0, mem->chisl_zetasl+k, &work->xi, mem->zsl_trial+i, 0);
+            filterddp_apply_rule(ngi, nxi, mem->zsu+k, 0, 1.0, mem->chisu_zetasu+k, &work->xi, mem->zsu_trial+i, 0);
+        }
+        for (int j = 0; j < nui; j++)
+        {
+            VEL(trial->ux+i, j) = filterddp_interior(VEL(trial->ux+i, j), VEL(mem->ul+i, j), VEL(mem->uu+i, j),
+                    VEL(mem->maskul+i, j) != 0.0, VEL(mem->maskuu+i, j) != 0.0, opts->kappa_1, opts->kappa_2);
+            VEL(mem->zl_trial+i, j) = filterddp_max(VEL(mem->zl_trial+i, j), dual_floor)*VEL(mem->maskul+i, j);
+            VEL(mem->zu_trial+i, j) = filterddp_max(VEL(mem->zu_trial+i, j), dual_floor)*VEL(mem->maskuu+i, j);
+        }
+        for (int j = 0; j < ngi; j++)
+        {
+            VEL(mem->s_trial+i, j) = filterddp_interior(VEL(mem->s_trial+i, j), VEL(mem->gl+i, j), VEL(mem->gu+i, j),
+                    VEL(mem->maskgl+i, j) != 0.0, VEL(mem->maskgu+i, j) != 0.0, opts->kappa_1, opts->kappa_2);
+            VEL(mem->zsl_trial+i, j) = filterddp_max(VEL(mem->zsl_trial+i, j), dual_floor)*VEL(mem->maskgl+i, j);
+            VEL(mem->zsu_trial+i, j) = filterddp_max(VEL(mem->zsu_trial+i, j), dual_floor)*VEL(mem->maskgu+i, j);
+        }
+        if (!filterddp_all_finite(nui+nxi, trial->ux+i, 0) || !filterddp_all_finite(ngi, mem->s_trial+i, 0))
+        {
+            ok = 0;
+            break;
+        }
+        filterddp_evaluate_dynamics_at(config, dims, in, nlp_opts, nlp_mem, nlp_work, trial, i);
+        struct blasfeo_dvec *fun = config->dynamics[i]->memory_get_fun_ptr(nlp_mem->dynamics[i]);
+        blasfeo_daxpy(nx[i+1], 1.0, fun, 0, out->ux+i+1, nu[i+1], trial->ux+i+1, nu[i+1]);
+        ok = filterddp_all_finite(nx[i+1], trial->ux+i+1, nu[i+1]);
+    }
+    if (ok)
+        filterddp_accept_trial(dims, out, trial, mem);
+    filterddp_restore_module_pointers(config, dims, nlp_mem, out);
+    return ok;
+}
+
+
+
 static void print_iteration(int iter, ocp_nlp_filterddp_memory *mem)
 {
     if (iter % 10 == 0)
@@ -2208,7 +2302,13 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
         }
     }
 
-    filterddp_initialize_trajectory(config, dims, nlp_in, nlp_out, opts, mem, work);
+    double mu_previous = mem->mu;
+    int warm = opts->warm_start && mem->policy_valid
+            && filterddp_shift_policy(config, dims, nlp_in, nlp_out, trial, opts, mem, work);
+    if (!warm)
+    {
+        filterddp_initialize_trajectory(config, dims, nlp_in, nlp_out, opts, mem, work);
+    }
 
     double previous_objective_scale = mem->objective_scale;
     filterddp_compute_nlp_scaling(config, dims, nlp_in, nlp_out, opts, mem, work);
@@ -2234,6 +2334,11 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
     }
 
     mem->mu = mem->objective_scale*opts->mu_init;
+    if (warm)
+    {
+        // continue from the barrier parameter the previous solve ended with
+        mem->mu = filterddp_max(nlp_opts->tol_stat/10.0, filterddp_min(mem->mu, mu_previous));
+    }
     mem->reg_last = 0.0;
     mem->step_size = 0.0;
     mem->barrier_iter = 0;
@@ -2319,10 +2424,16 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
         iter++;
     }
 
+    int policy_valid = nlp_mem->status == ACADOS_SUCCESS;
     if (iter == nlp_opts->max_iter)
+    {
         nlp_mem->status = ACADOS_MAXITER;
-
+        // the update rules belong to the iterate before the last step; recompute them at the returned iterate
+        filterddp_backward_pass(config, dims, nlp_in, nlp_out, opts, mem, work);
+        policy_valid = mem->status_internal == FILTERDDP_STATUS_OK;
+    }
     filterddp_restore_module_pointers(config, dims, nlp_mem, nlp_out);
+    mem->policy_valid = policy_valid;
     filterddp_export_solution(config, dims, nlp_in, nlp_out, opts, mem, work);
 
     nlp_mem->iter = iter;
@@ -2395,6 +2506,7 @@ void ocp_nlp_filterddp_memory_reset_qp_solver(void *config_, void *dims_, void *
     ocp_nlp_filterddp_workspace *work = work_;
     ocp_nlp_workspace *nlp_work = work->nlp_work;
 
+    mem->policy_valid = 0;
     config->qp_solver->memory_reset(qp_solver, dims->qp_solver,
         nlp_mem->qp_in, nlp_mem->qp_out, opts->nlp_opts->qp_solver_opts,
         nlp_mem->qp_solver_mem, nlp_work->qp_work);
@@ -2653,6 +2765,37 @@ void ocp_nlp_filterddp_step_update(void *config_, void *dims_,
 
 
 
+void ocp_nlp_filterddp_get_at_stage(void *config_, void *dims_, void *mem_, int stage, const char *field, void *return_value_)
+{
+    ocp_nlp_dims *dims = dims_;
+    ocp_nlp_filterddp_memory *mem = mem_;
+    double *value = return_value_;
+
+    if (stage < 0 || stage >= dims->N)
+    {
+        printf("\nerror: ocp_nlp_filterddp_get_at_stage: field %s not available at stage %d\n", field, stage);
+        exit(1);
+    }
+    int nx = dims->nx[stage];
+    int nu = dims->nu[stage];
+
+    if (!strcmp(field, "K"))
+    {
+        blasfeo_unpack_dmat(nu, nx, mem->alpha_beta+stage, 0, 1, value, nu);
+    }
+    else if (!strcmp(field, "k"))
+    {
+        blasfeo_unpack_dmat(nu, 1, mem->alpha_beta+stage, 0, 0, value, nu);
+    }
+    else
+    {
+        printf("\nerror: ocp_nlp_filterddp_get_at_stage: field %s not available\n", field);
+        exit(1);
+    }
+}
+
+
+
 void ocp_nlp_filterddp_config_initialize_default(void *config_)
 {
     ocp_nlp_config *config = (ocp_nlp_config *) config_;
@@ -2675,6 +2818,7 @@ void ocp_nlp_filterddp_config_initialize_default(void *config_)
     config->config_initialize_default = &ocp_nlp_filterddp_config_initialize_default;
     config->precompute = &ocp_nlp_filterddp_precompute;
     config->get = &ocp_nlp_filterddp_get;
+    config->get_at_stage = &ocp_nlp_filterddp_get_at_stage;
     config->opts_get = &ocp_nlp_filterddp_opts_get;
     config->work_get = &ocp_nlp_filterddp_work_get;
     config->terminate = &ocp_nlp_filterddp_terminate;

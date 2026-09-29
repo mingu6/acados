@@ -86,6 +86,7 @@ typedef struct
 
     int nlp_scaling;            // gradient based scaling of objective and constraints at the initial point
     double nlp_scaling_max_gradient;
+    int warm_start;             // 1: initialize each solve from the shifted affine policy and final barrier parameter of the previous solve
     int symmetric_value_hessian; // 1: symmetrise the value function Hessian after each stage
 
 } ocp_nlp_filterddp_opts;
@@ -175,6 +176,7 @@ typedef struct
     double *filter;
     int filter_size;
     int filter_capacity;
+    int policy_valid;
 
     // iteration data
     double mu;
@@ -330,6 +332,8 @@ int ocp_nlp_filterddp_precompute(void *config_, void *dims_, void *nlp_in_, void
                 void *opts_, void *mem_, void *work_);
 //
 void ocp_nlp_filterddp_get(void *config_, void *dims_, void *mem_, const char *field, void *return_value_);
+//
+void ocp_nlp_filterddp_get_at_stage(void *config_, void *dims_, void *mem_, int stage, const char *field, void *return_value_);
 
 #ifdef __cplusplus
 } /* extern "C" */
