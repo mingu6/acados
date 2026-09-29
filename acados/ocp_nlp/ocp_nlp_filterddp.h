@@ -181,8 +181,9 @@ typedef struct
     double reg_last;
     double step_size;
     double objective;
-    double primal_inf;
-    double primal_inf_raw;
+    double primal_inf;          // max(eq_inf, ineq_inf)
+    double eq_inf;              // equality constraint violation
+    double ineq_inf;            // inequality constraint violation (slack residual)
     double dual_inf;
     int stationarity_costate;   // 1: dual_inf is attained with the costate, 0: with the primal-dual value gradient
     double cs_inf_0;

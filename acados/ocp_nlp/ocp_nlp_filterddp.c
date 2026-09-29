@@ -987,6 +987,15 @@ static void filterddp_set_lam(ocp_nlp_dims *dims, ocp_nlp_out *out, ocp_nlp_filt
 
 
 
+// lower bound on the barrier parameter, as in IPOPT: an order of magnitude below the stationarity and
+// complementarity tolerances
+static double filterddp_mu_min(ocp_nlp_opts *nlp_opts)
+{
+    return filterddp_min(nlp_opts->tol_stat, nlp_opts->tol_comp)/10.0;
+}
+
+
+
 static void filterddp_set_pi(ocp_nlp_dims *dims, ocp_nlp_out *out, int i, struct blasfeo_dvec *lambda)
 {
     blasfeo_dveccp(dims->nx[i+1], lambda, 0, out->pi+i, 0);
@@ -1238,8 +1247,8 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
 
         mem->barrier_lagrangian_curr = 0.0;
         mem->primal_1_curr = 0.0;
-        mem->primal_inf = 0.0;
-        mem->primal_inf_raw = 0.0;
+        mem->eq_inf = 0.0;
+        mem->ineq_inf = 0.0;
         mem->cs_inf_mu = 0.0;
         mem->cs_inf_0 = 0.0;
         mem->objective = *fun_N;
@@ -1306,16 +1315,14 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
             if (nhi > 0)
             {
                 mem->primal_1_curr += filterddp_norm_1(nhi, &work->h, 0);
-                mem->primal_inf = filterddp_max(mem->primal_inf, filterddp_norm_inf(nhi, &work->h, 0));
-                mem->primal_inf_raw = filterddp_max(mem->primal_inf_raw, filterddp_norm_inf(nhi, &work->h, 0));
+                mem->eq_inf = filterddp_max(mem->eq_inf, filterddp_norm_inf(nhi, &work->h, 0));
             }
             if (ngi > 0)
             {
                 for (int j = 0; j < ngi; j++)
                     VEL(&work->q, j) = VEL(&work->g, j) - VEL(s, j);
                 mem->primal_1_curr += filterddp_norm_1(ngi, &work->q, 0);
-                mem->primal_inf = filterddp_max(mem->primal_inf, filterddp_norm_inf(ngi, &work->q, 0));
-                mem->primal_inf_raw = filterddp_max(mem->primal_inf_raw, filterddp_norm_inf(ngi, &work->q, 0));
+                mem->ineq_inf = filterddp_max(mem->ineq_inf, filterddp_norm_inf(ngi, &work->q, 0));
             }
 
             // barrier Lagrangian and complementarity errors
@@ -1686,6 +1693,7 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
         // Take the smaller bound.
         mem->stationarity_costate = dual_inf_costate <= dual_inf_value;
         mem->dual_inf = filterddp_min(dual_inf_costate, dual_inf_value)/scaling_dual;
+        mem->primal_inf = filterddp_max(mem->eq_inf, mem->ineq_inf);
         mem->cs_inf_0 /= scaling_cs;
         mem->cs_inf_mu /= scaling_cs;
         mem->barrier_lagrangian_curr += mem->objective;
@@ -2269,7 +2277,7 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
     if (warm)
     {
         // continue from the barrier parameter the previous solve ended with
-        mem->mu = filterddp_max(nlp_opts->tol_stat/10.0, filterddp_min(mem->mu, mu_previous));
+        mem->mu = filterddp_max(filterddp_mu_min(nlp_opts), filterddp_min(mem->mu, mu_previous));
     }
     mem->reg_last = 0.0;
     mem->step_size = 0.0;
@@ -2314,22 +2322,28 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
             break;
         }
 
-        double opt_err_mu = filterddp_max(filterddp_max(mem->dual_inf, mem->cs_inf_mu), mem->primal_inf);
-        double opt_err_0 = filterddp_max(filterddp_max(mem->dual_inf, mem->cs_inf_0), mem->primal_inf);
         if (!isfinite(mem->dual_inf) || !isfinite(mem->primal_inf) || !isfinite(mem->cs_inf_0) || !isfinite(mem->objective))
         {
             nlp_mem->status = ACADOS_NAN_DETECTED;
             break;
         }
 
-        if (opt_err_0 < nlp_opts->tol_stat)
+        if (mem->dual_inf < nlp_opts->tol_stat && mem->eq_inf < nlp_opts->tol_eq
+                && mem->ineq_inf < nlp_opts->tol_ineq && mem->cs_inf_0 < nlp_opts->tol_comp)
         {
             nlp_mem->status = ACADOS_SUCCESS;
             break;
         }
-        if (opt_err_mu <= opts->kappa_eps*mem->mu && mem->ni_bounds > 0 && mem->mu > nlp_opts->tol_stat/10.0)
+        // barrier subproblem solved: its error below kappa_eps*mu, where no error needs to be smaller than its
+        // termination tolerance (with equal tolerances and kappa_eps >= 10 this is kappa_eps*mu, as mu > mu_min)
+        double mu_min = filterddp_mu_min(nlp_opts);
+        double tol_mu = opts->kappa_eps*mem->mu;
+        int barrier_solved = mem->dual_inf <= filterddp_max(tol_mu, nlp_opts->tol_stat)
+                && mem->eq_inf <= filterddp_max(tol_mu, nlp_opts->tol_eq)
+                && mem->ineq_inf <= filterddp_max(tol_mu, nlp_opts->tol_ineq) && mem->cs_inf_mu <= tol_mu;
+        if (barrier_solved && mem->ni_bounds > 0 && mem->mu > mu_min)
         {
-            mem->mu = filterddp_max(nlp_opts->tol_stat/10.0, filterddp_min(opts->kappa_mu*mem->mu, pow(mem->mu, opts->theta_mu)));
+            mem->mu = filterddp_max(mu_min, filterddp_min(opts->kappa_mu*mem->mu, pow(mem->mu, opts->theta_mu)));
             filterddp_reset_filter(mem);
             mem->barrier_iter++;
             continue;
