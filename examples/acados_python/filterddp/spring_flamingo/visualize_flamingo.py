@@ -198,11 +198,12 @@ def animate(path, kin, traj, fps, trace=True):
             artist.remove()
         dynamic.clear()
         if trace:
+            # Above the opaque torso fan (zorder 2), below links and contacts.
             dynamic.extend(ax.plot(torso_com[:frame + 1, 0], torso_com[:frame + 1, 1],
-                                   color=TORSO_TRACE, linewidth=1.2))
+                                   color=TORSO_TRACE, linewidth=1.2, zorder=2.5))
             for leg in (0, 1):
                 dynamic.extend(ax.plot(toes[:frame + 1, leg, 0], toes[:frame + 1, leg, 1],
-                                       color=TOE_TRACE, linewidth=1.0))
+                                       color=TOE_TRACE, linewidth=1.0, zorder=2.5))
         dynamic.extend(draw_robot(ax, kin, traj.q[frame]))
         title.set_text(f"t = {traj.times[frame]:.3f} s")
         return dynamic + [title]
