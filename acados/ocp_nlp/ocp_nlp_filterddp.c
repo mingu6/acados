@@ -148,7 +148,6 @@ void ocp_nlp_filterddp_opts_initialize_default(void *config_, void *dims_, void 
     opts->theta_min_factor = 1e-4;
 
     opts->warm_start = 0;
-    opts->value_gradient_stationarity = 1;
     opts->symmetric_value_hessian = 1;
 
     return;
@@ -281,10 +280,6 @@ void ocp_nlp_filterddp_opts_set(void *config_, void *opts_, const char *field, v
     {
         opts->warm_start = *(int *) value;
     }
-    else if (!strcmp(field, "filterddp_value_gradient_stationarity"))
-    {
-        opts->value_gradient_stationarity = *(int *) value;
-    }
     else if (!strcmp(field, "filterddp_symmetric_value_hessian"))
     {
         opts->symmetric_value_hessian = *(int *) value;
@@ -367,6 +362,10 @@ acados_size_t ocp_nlp_filterddp_memory_calculate_size(void *config_, void *dims_
 
     // per stage vectors: 8 bounds, 7 iterate, 7 trial, 2 scaling
     size += 24*N*sizeof(struct blasfeo_dvec);
+    // costate
+    size += (N+1)*sizeof(struct blasfeo_dvec);
+    for (int i = 0; i <= N; i++)
+        size += blasfeo_memsize_dvec(nx[i]);
     // per stage matrices: 8 update rules
     size += 8*N*sizeof(struct blasfeo_dmat);
     for (int i = 0; i < N; i++)
@@ -472,6 +471,7 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
     assign_and_advance_blasfeo_dvec_structs(N, &mem->zu_trial, &c_ptr);
     assign_and_advance_blasfeo_dvec_structs(N, &mem->zsl_trial, &c_ptr);
     assign_and_advance_blasfeo_dvec_structs(N, &mem->zsu_trial, &c_ptr);
+    assign_and_advance_blasfeo_dvec_structs(N+1, &mem->costate, &c_ptr);
 
     // matrix structs
     assign_and_advance_blasfeo_dmat_structs(N, &mem->alpha_beta, &c_ptr);
@@ -520,6 +520,8 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
         assign_and_advance_blasfeo_dmat_mem(ni[i], nx[i]+1, mem->chisl_zetasl+i, &c_ptr);
         assign_and_advance_blasfeo_dmat_mem(ni[i], nx[i]+1, mem->chisu_zetasu+i, &c_ptr);
     }
+    for (int i = 0; i <= N; i++)
+        assign_and_advance_blasfeo_dvec_mem(nx[i], mem->costate+i, &c_ptr);
 
     for (int i = 0; i < N; i++)
     {
@@ -567,7 +569,7 @@ acados_size_t ocp_nlp_filterddp_workspace_calculate_size(void *config_, void *di
 
     size += ocp_nlp_workspace_calculate_size(config, dims, nlp_opts, nlp_in);
 
-    size += 4*blasfeo_memsize_dvec(nx_max);                 // Vx, Vx_next, lambda, lambda_next
+    size += 6*blasfeo_memsize_dvec(nx_max);                 // Vx, Vx_next, lambda, lambda_next, Vd, Vd_next
     size += blasfeo_memsize_dmat(nx_max, nx_max);           // Vxx
     size += 2*blasfeo_memsize_dmat(nx_max, nx_max);         // fx, C
     size += blasfeo_memsize_dmat(nx_max, nu_max);           // fu
@@ -576,7 +578,7 @@ acados_size_t ocp_nlp_filterddp_workspace_calculate_size(void *config_, void *di
     size += 2*blasfeo_memsize_dvec(nx_max);                 // lx + spare
     size += 5*blasfeo_memsize_dvec(ni_max);                 // h, g, q, Ls, Qs
     size += 2*blasfeo_memsize_dvec(nu_max);                 // lu, Qu
-    size += blasfeo_memsize_dvec(nu_max);                   // Lu
+    size += 2*blasfeo_memsize_dvec(nu_max);                 // Lu, Lu_costate
     size += 3*blasfeo_memsize_dmat(nu_max, nu_max);         // H, Hsolve, Lchol
     size += 2*blasfeo_memsize_dmat(nu_max, nx_max);         // B, ux_tmp
     size += blasfeo_memsize_dmat(nx_max, nx_max);           // xx_tmp
@@ -635,6 +637,8 @@ static void ocp_nlp_filterddp_cast_workspace(ocp_nlp_config *config, ocp_nlp_dim
     assign_and_advance_blasfeo_dmat_mem(nx_max, nx_max, &work->Vxx, &c_ptr);
     assign_and_advance_blasfeo_dvec_mem(nx_max, &work->lambda, &c_ptr);
     assign_and_advance_blasfeo_dvec_mem(nx_max, &work->lambda_next, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(nx_max, &work->Vd, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(nx_max, &work->Vd_next, &c_ptr);
 
     assign_and_advance_blasfeo_dmat_mem(nx_max, nx_max, &work->fx, &c_ptr);
     assign_and_advance_blasfeo_dmat_mem(nx_max, nu_max, &work->fu, &c_ptr);
@@ -656,6 +660,7 @@ static void ocp_nlp_filterddp_cast_workspace(ocp_nlp_config *config, ocp_nlp_dim
     assign_and_advance_blasfeo_dvec_mem(nu_max, &work->Qu, &c_ptr);
     assign_and_advance_blasfeo_dvec_mem(ni_max, &work->Qs, &c_ptr);
     assign_and_advance_blasfeo_dvec_mem(nu_max, &work->Lu, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(nu_max, &work->Lu_costate, &c_ptr);
     assign_and_advance_blasfeo_dvec_mem(ni_max, &work->Ls, &c_ptr);
 
     assign_and_advance_blasfeo_dvec_mem(nu_max, &work->ul_dist, &c_ptr);
@@ -1227,6 +1232,8 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
             for (int k = j+1; k < nx[N]; k++)
                 EL(&work->Vxx, j, k) = EL(&work->Vxx, k, j);
         blasfeo_dveccp(nx[N], &work->Vx, 0, &work->lambda, 0);
+        blasfeo_dveccp(nx[N], &work->Vx, 0, &work->Vd, 0);
+        blasfeo_dveccp(nx[N], &work->Vx, 0, mem->costate+N, 0);
         double *fun_N = config->cost[N]->memory_get(nlp_mem->cost[N], "fun");
 
         mem->barrier_lagrangian_curr = 0.0;
@@ -1236,7 +1243,8 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
         mem->cs_inf_mu = 0.0;
         mem->cs_inf_0 = 0.0;
         mem->objective = *fun_N;
-        mem->dual_inf = 0.0;
+        double dual_inf_costate = 0.0;
+        double dual_inf_value = 0.0;
         mem->expected_change_L = 0.0;
         double phi_norm = 0.0;
         double z_norm = 0.0;
@@ -1382,7 +1390,7 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
             }
 
             // Qu = lu + fu' Vx + mu (inv_uu - inv_ul)
-            blasfeo_dgemv_t(nxi, nui, 1.0, &work->fu, 0, 0, &work->Vx, 0, 1.0, &work->lu, 0, &work->Qu, 0);
+            blasfeo_dgemv_t(nx[i+1], nui, 1.0, &work->fu, 0, 0, &work->Vx, 0, 1.0, &work->lu, 0, &work->Qu, 0);
             for (int j = 0; j < nui; j++)
                 VEL(&work->Qu, j) += mu*(VEL(&work->inv_uu, j) - VEL(&work->inv_ul, j));
             for (int j = 0; j < ngi; j++)
@@ -1573,10 +1581,10 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
                 EL(mem->chisu_zetasu+i, j, 0) = VEL(&work->inv_su, j)*mu - VEL(zsu, j) + VEL(&work->SigmasU, j)*EL(ab_s, j, 0);
             }
 
-            // dual infeasibility
+            // stationarity residuals with the costate (Lu_costate) and with the primal-dual value gradient
+            // (Lu) as dynamics multiplier
             for (int j = 0; j < nui; j++)
                 VEL(&work->Lu, j) = VEL(&work->lu, j) - VEL(zl, j) + VEL(zu, j);
-            blasfeo_dgemv_t(nxi, nui, 1.0, &work->fu, 0, 0, opts->value_gradient_stationarity ? &work->Vx : &work->lambda, 0, 1.0, &work->Lu, 0, &work->Lu, 0);
             if (nhi > 0)
                 blasfeo_dgemv_t(nhi, nui, 1.0, &work->hu, 0, 0, phi, 0, 1.0, &work->Lu, 0, &work->Lu, 0);
             if (ngi > 0)
@@ -1584,9 +1592,14 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
                 blasfeo_dgemv_t(ngi, nui, 1.0, &work->gu, 0, 0, nu_, 0, 1.0, &work->Lu, 0, &work->Lu, 0);
                 for (int j = 0; j < ngi; j++)
                     VEL(&work->Ls, j) = -VEL(nu_, j) - VEL(zsl, j) + VEL(zsu, j);
-                mem->dual_inf = filterddp_max(mem->dual_inf, filterddp_norm_inf(ngi, &work->Ls, 0));
+                double Ls_norm = filterddp_norm_inf(ngi, &work->Ls, 0);
+                dual_inf_costate = filterddp_max(dual_inf_costate, Ls_norm);
+                dual_inf_value = filterddp_max(dual_inf_value, Ls_norm);
             }
-            mem->dual_inf = filterddp_max(mem->dual_inf, filterddp_norm_inf(nui, &work->Lu, 0));
+            blasfeo_dgemv_t(nx[i+1], nui, 1.0, &work->fu, 0, 0, &work->lambda, 0, 1.0, &work->Lu, 0, &work->Lu_costate, 0);
+            blasfeo_dgemv_t(nx[i+1], nui, 1.0, &work->fu, 0, 0, &work->Vd, 0, 1.0, &work->Lu, 0, &work->Lu, 0);
+            dual_inf_costate = filterddp_max(dual_inf_costate, filterddp_norm_inf(nui, &work->Lu_costate, 0));
+            dual_inf_value = filterddp_max(dual_inf_value, filterddp_norm_inf(nui, &work->Lu, 0));
             for (int j = 0; j < nui; j++)
                 z_norm += VEL(zl, j) + VEL(zu, j);
             for (int j = 0; j < ngi; j++)
@@ -1631,19 +1644,30 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
                 blasfeo_dgemv_t(ngi, nxi, 1.0, mem->psig_omegag+i, 0, 1, &work->q, 0, 1.0, &work->Vx_next, 0, &work->Vx_next, 0);
                 blasfeo_dgemv_t(ngi, nxi, 1.0, &work->gx, 0, 0, nu_, 0, 1.0, &work->lambda_next, 0, &work->lambda_next, 0);
             }
-            if (opts->value_gradient_stationarity)
+            // primal-dual value gradient: the recursion of Vx with the stationarity residuals Lu, Ls
+            // (bound duals) in place of the barrier gradients Qu, Qs, which differ by (s z - mu)/s at
+            // active bounds. As a multiplier its adjoint equation residual is
+            // beta' Lu + betas' Ls + omegah' h + omegag' q, bounded by the other residuals.
+            // pi holds it until the export, which picks the multiplier attaining dual_inf.
+            filterddp_set_pi(dims, out, i, &work->Vd);
+            blasfeo_dgemv_t(nui, nxi, 1.0, alpha_beta, 0, 1, &work->Lu, 0, 0.0, &work->tmp_nv, 0, &work->tmp_nv, 0);
+            if (nhi > 0)
+                blasfeo_dgemv_t(nhi, nxi, 1.0, mem->psih_omegah+i, 0, 1, &work->h, 0, 1.0, &work->tmp_nv, 0, &work->tmp_nv, 0);
+            if (ngi > 0)
             {
-                // adjoint equation residual of the value gradient as multiplier estimate
-                blasfeo_dgemv_t(nx[i+1], nxi, 1.0, &work->fx, 0, 0, &work->Vx, 0, 1.0, &work->lx, 0, &work->tmp_nv, 0);
-                if (nhi > 0)
-                    blasfeo_dgemv_t(nhi, nxi, 1.0, &work->hx, 0, 0, phi, 0, 1.0, &work->tmp_nv, 0, &work->tmp_nv, 0);
-                if (ngi > 0)
-                    blasfeo_dgemv_t(ngi, nxi, 1.0, &work->gx, 0, 0, nu_, 0, 1.0, &work->tmp_nv, 0, &work->tmp_nv, 0);
-                blasfeo_daxpy(nxi, -1.0, &work->Vx_next, 0, &work->tmp_nv, 0, &work->tmp_nv, 0);
-                mem->dual_inf = filterddp_max(mem->dual_inf, filterddp_norm_inf(nxi, &work->tmp_nv, 0));
+                blasfeo_dgemv_t(ngi, nxi, 1.0, mem->alphas_betas+i, 0, 1, &work->Ls, 0, 1.0, &work->tmp_nv, 0, &work->tmp_nv, 0);
+                blasfeo_dgemv_t(ngi, nxi, 1.0, mem->psig_omegag+i, 0, 1, &work->q, 0, 1.0, &work->tmp_nv, 0, &work->tmp_nv, 0);
             }
+            dual_inf_value = filterddp_max(dual_inf_value, filterddp_norm_inf(nxi, &work->tmp_nv, 0));
+            blasfeo_dgemv_t(nx[i+1], nxi, 1.0, &work->fx, 0, 0, &work->Vd, 0, 1.0, &work->lx, 0, &work->Vd_next, 0);
+            if (nhi > 0)
+                blasfeo_dgemv_t(nhi, nxi, 1.0, &work->hx, 0, 0, phi, 0, 1.0, &work->Vd_next, 0, &work->Vd_next, 0);
+            if (ngi > 0)
+                blasfeo_dgemv_t(ngi, nxi, 1.0, &work->gx, 0, 0, nu_, 0, 1.0, &work->Vd_next, 0, &work->Vd_next, 0);
+            blasfeo_daxpy(nxi, 1.0, &work->tmp_nv, 0, &work->Vd_next, 0, &work->Vd, 0);
             blasfeo_dveccp(nxi, &work->Vx_next, 0, &work->Vx, 0);
             blasfeo_dveccp(nxi, &work->lambda_next, 0, &work->lambda, 0);
+            blasfeo_dveccp(nxi, &work->lambda, 0, mem->costate+i, 0);
 
             for (int j = 0; j < nui; j++)
                 mem->expected_change_L += VEL(&work->Qu, j)*EL(alpha_beta, j, 0);
@@ -1657,7 +1681,11 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
         mem->ni_bounds = ni_bounds;
         double scaling_dual = filterddp_max(opts->s_max, (phi_norm + z_norm)/filterddp_max((double) (ni_bounds + nh_total), 1.0))/opts->s_max;
         double scaling_cs = filterddp_max(opts->s_max, z_norm/filterddp_max((double) ni_bounds, 1.0))/opts->s_max;
-        mem->dual_inf /= scaling_dual;
+        // both multipliers bound the stationarity error: the costate recursion carries the barrier
+        // gradients of the controls, the primal-dual value gradient the gain-amplified adjoint residual.
+        // Take the smaller bound.
+        mem->stationarity_costate = dual_inf_costate <= dual_inf_value;
+        mem->dual_inf = filterddp_min(dual_inf_costate, dual_inf_value)/scaling_dual;
         mem->cs_inf_0 /= scaling_cs;
         mem->cs_inf_mu /= scaling_cs;
         mem->barrier_lagrangian_curr += mem->objective;
@@ -2112,26 +2140,41 @@ static void filterddp_export_solution(ocp_nlp_config *config, ocp_nlp_dims *dims
     ocp_nlp_workspace *nlp_work = work->nlp_work;
     int N = dims->N;
 
-    // multipliers of bounds and constraints into the acados layout; bound multipliers are
-    // the interior point duals, constraint multipliers phi / nu with sign split over the two sides
+    // multipliers in the acados layout: equality rows get phi split by sign over the two sides,
+    // bounds on u and slacked inequality rows the interior point duals of their bounds (nu = zsu - zsl
+    // at a solution), and the initial state rows the value function gradient at stage 0. The dynamics
+    // multipliers pi and the value function gradient are those attaining dual_inf: the costate, or the
+    // primal-dual value gradient that the backward pass leaves in pi.
+    struct blasfeo_dvec *value_gradient_0 = mem->stationarity_costate ? mem->costate : &work->Vd;
     for (int i = 0; i < N; i++)
     {
+        if (mem->stationarity_costate)
+            filterddp_set_pi(dims, out, i, mem->costate+i+1);
         int ni = dims->ni[i];
         ocp_nlp_constraints_bgh_dims *cdims = dims->constraints[i];
+        ocp_nlp_constraints_bgh_model *model = in->constraints[i];
         filterddp_set_lam(dims, out, mem, i, mem->phi+i, mem->nu+i);
         for (int j = 0; j < cdims->nbu; j++)
         {
-            int col = ((ocp_nlp_constraints_bgh_model *) in->constraints[i])->idxb[j];
+            int col = model->idxb[j];
             VEL(out->lam+i, j) = VEL(mem->zl+i, col);
             VEL(out->lam+i, ni+j) = VEL(mem->zu+i, col);
         }
         for (int j = 0; j < mem->ng[i]; j++)
         {
             int idx = mem->idxg[i][j];
-            VEL(out->lam+i, idx) += VEL(mem->zsl+i, j);
-            VEL(out->lam+i, ni+idx) += VEL(mem->zsu+i, j);
+            VEL(out->lam+i, idx) = VEL(mem->zsl+i, j);
+            VEL(out->lam+i, ni+idx) = VEL(mem->zsu+i, j);
         }
-        filterddp_set_pi(dims, out, i, i == 0 ? &work->lambda : &work->lambda);
+        if (i == 0)
+        {
+            for (int j = cdims->nbu; j < cdims->nbu+cdims->nbx; j++)
+            {
+                double v = VEL(value_gradient_0, model->idxb[j]-dims->nu[0]);
+                VEL(out->lam+i, j) = v > 0.0 ? v : 0.0;
+                VEL(out->lam+i, ni+j) = v < 0.0 ? -v : 0.0;
+            }
+        }
     }
 
     ocp_nlp_approximate_qp_matrices(config, dims, in, out, nlp_opts, nlp_mem, nlp_work);

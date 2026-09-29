@@ -85,7 +85,6 @@ typedef struct
     double theta_min_factor;    // constraint violation threshold for the switching condition, relative to initial
 
     int warm_start;             // 1: initialize each solve from the shifted affine policy and final barrier parameter of the previous solve
-    int value_gradient_stationarity; // 1 (default): stationarity residual with the value gradient, plus its adjoint equation residual; 0: with the costate
     int symmetric_value_hessian; // 1: symmetrise the value function Hessian after each stage
 
 } ocp_nlp_filterddp_opts;
@@ -156,6 +155,9 @@ typedef struct
     struct blasfeo_dvec *zsl_trial;
     struct blasfeo_dvec *zsu_trial;
 
+    // costate of the last backward pass, stages 0:N
+    struct blasfeo_dvec *costate;
+
     // update rules, feedforward in column 0, feedback in columns 1:nx
     struct blasfeo_dmat *alpha_beta;      // nu x (nx+1)
     struct blasfeo_dmat *alphas_betas;    // ng x (nx+1)
@@ -182,6 +184,7 @@ typedef struct
     double primal_inf;
     double primal_inf_raw;
     double dual_inf;
+    int stationarity_costate;   // 1: dual_inf is attained with the costate, 0: with the primal-dual value gradient
     double cs_inf_0;
     double cs_inf_mu;
     double barrier_lagrangian_curr;
@@ -225,6 +228,8 @@ typedef struct
     struct blasfeo_dmat Vxx;
     struct blasfeo_dvec lambda;
     struct blasfeo_dvec lambda_next;
+    struct blasfeo_dvec Vd;       // primal-dual value gradient, multiplier estimate of the stationarity measure
+    struct blasfeo_dvec Vd_next;
 
     // stage derivatives gathered from the qp_in linearization
     struct blasfeo_dmat fx;
@@ -248,6 +253,7 @@ typedef struct
     struct blasfeo_dvec Qu;
     struct blasfeo_dvec Qs;
     struct blasfeo_dvec Lu;
+    struct blasfeo_dvec Lu_costate;
     struct blasfeo_dvec Ls;
 
     // bound terms
