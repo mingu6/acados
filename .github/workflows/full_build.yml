@@ -339,6 +339,39 @@ jobs:
         python hs074_constraint_scaling.py
         python hs099.py
 
+  py_filterddp:
+    needs: call_core_build
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      with:
+        submodules: 'recursive'
+
+    - name: Setup Test Environment
+      uses: ./.github/actions/setup-test-environment
+      with:
+        artifact-name-prefix: ${{ needs.call_core_build.outputs.artifact-name-prefix }}
+
+    - name: Setup Python Environment
+      uses: ./.github/actions/setup-python-environment
+
+    - name: FILTERDDP solution, multipliers and sensitivities against SQP
+      working-directory: ${{ github.workspace }}/examples/acados_python/filterddp
+      shell: bash
+      run: |
+        source ${{ github.workspace }}/acadosenv/bin/activate
+        python test_filterddp.py
+
+    - name: FILTERDDP acrobot NMPC
+      working-directory: ${{ github.workspace }}/examples/acados_python/filterddp
+      shell: bash
+      run: |
+        source ${{ github.workspace }}/acadosenv/bin/activate
+        python acrobot_nmpc.py
+        python acrobot_nmpc.py --control_limits
+
 
   python_cmake_tests:
     needs: call_core_build
