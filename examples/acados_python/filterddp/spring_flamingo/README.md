@@ -10,6 +10,12 @@ stride. It uses no mode schedule and no reference trajectory:
 - the contact sequence emerges from complementarity constraints;
 - the swing foot is kept off the ground by a speed-dependent clearance rule.
 
+![Spring Flamingo full stride: the default solution of this OCP](media/flamingo.gif)
+
+The animation is the default solution of the Results section, unrolled to a
+full stride with its mirror symmetry (`./reproduce.sh` regenerates it as
+`output/flamingo/flamingo.gif`).
+
 The mechanics are a variational (midpoint inverse-dynamics) contact-implicit
 integrator in which the next configuration is a control. Pinocchio
 evaluates kinematics and inverse dynamics through its CasADi scalar type, and
