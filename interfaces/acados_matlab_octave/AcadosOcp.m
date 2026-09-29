@@ -1456,11 +1456,53 @@ classdef AcadosOcp < handle
                 if ~strcmp(opts.cost_discretization, "EULER")
                     error('FILTERDDP solver evaluates the cost separately from the dynamics, use cost_discretization == EULER.');
                 end
+                if ~strcmp(opts.regularize_method, "NO_REGULARIZE")
+                    error('FILTERDDP solver performs its own inertia correction, use regularize_method == NO_REGULARIZE.');
+                end
+                if ~strcmp(opts.globalization, "FIXED_STEP")
+                    error('FILTERDDP solver uses its own filter line search, set globalization == FIXED_STEP.');
+                end
+                if dims.nbx_0 ~= dims.nx || dims.nbxe_0 ~= dims.nx
+                    error('FILTERDDP solver requires the initial state to be fixed, set constraints.x0.');
+                end
                 if any([dims.nbx_e, dims.ng_e, dims.nphi_e, dims.nh_e])
                     error('FILTERDDP solver does not support terminal constraints.')
                 end
                 if any([dims.ns, dims.ns_0, dims.ns_e, dims.nphi, dims.nphi_0, dims.nz])
                     error('FILTERDDP solver does not support soft constraints, BGP constraints or algebraic variables.')
+                end
+                % options of the SQP-type solvers and the QP solver that FILTERDDP does not use
+                defaults = AcadosOcpOptions();
+                ignored = {'globalization_fixed_step_length', 'globalization_alpha_reduction', ...
+                           'globalization_line_search_use_sufficient_descent', 'globalization_use_SOC', ...
+                           'globalization_funnel_init_increase_factor', 'globalization_funnel_init_upper_bound', ...
+                           'globalization_funnel_sufficient_decrease_factor', 'globalization_funnel_kappa', ...
+                           'globalization_funnel_fraction_switching_condition', 'globalization_funnel_initial_penalty_parameter', ...
+                           'globalization_funnel_use_merit_fun_only', ...
+                           'levenberg_marquardt', 'with_adaptive_levenberg_marquardt', 'adaptive_levenberg_marquardt_lam', ...
+                           'adaptive_levenberg_marquardt_mu_min', 'adaptive_levenberg_marquardt_mu0', ...
+                           'adaptive_levenberg_marquardt_obj_scalar', 'with_anderson_acceleration', 'anderson_activation_threshold', ...
+                           'fixed_hess', 'tau_min', 'nlp_solver_ext_qp_res', 'nlp_solver_warm_start_first_qp', ...
+                           'nlp_solver_warm_start_first_qp_from_nlp', 'nlp_qp_tol_strategy', ...
+                           'qp_solver_iter_max', 'qp_solver_tol_stat', 'qp_solver_tol_eq', 'qp_solver_tol_ineq', 'qp_solver_tol_comp', ...
+                           'qp_solver_warm_start', 'qp_solver_mu0', 'qpscaling_scale_constraints', 'qpscaling_scale_objective', ...
+                           'store_iterates', 'log_primal_step_norm', 'log_dual_step_norm', 'timeout_max_time'};
+                changed = {};
+                for k = 1:numel(ignored)
+                    if isprop(opts, ignored{k}) && ~isequal(opts.(ignored{k}), defaults.(ignored{k}))
+                        changed{end+1} = ignored{k};
+                    end
+                end
+                % defaults set below by make_consistent for globalization FIXED_STEP
+                filled = {'globalization_alpha_min', 0.05; 'globalization_eps_sufficient_descent', 1e-4; ...
+                          'globalization_full_step_dual', 0; 'nlp_solver_tol_min_step_norm', 0};
+                for k = 1:size(filled, 1)
+                    if isprop(opts, filled{k, 1}) && ~isempty(opts.(filled{k, 1})) && ~isequal(opts.(filled{k, 1}), filled{k, 2})
+                        changed{end+1} = filled{k, 1};
+                    end
+                end
+                if ~isempty(changed)
+                    error(['FILTERDDP solver does not use the options ', strjoin(changed, ', '), ', leave them at their defaults.']);
                 end
             end
 

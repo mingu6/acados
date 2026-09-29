@@ -371,6 +371,13 @@ jobs:
         source ${{ github.workspace }}/acadosenv/bin/activate
         python test_filterddp_formulations.py
 
+    - name: FILTERDDP options and termination tolerances
+      working-directory: ${{ github.workspace }}/examples/acados_python/filterddp
+      shell: bash
+      run: |
+        source ${{ github.workspace }}/acadosenv/bin/activate
+        python test_filterddp_options.py
+
     - name: FILTERDDP acrobot NMPC
       working-directory: ${{ github.workspace }}/examples/acados_python/filterddp
       shell: bash

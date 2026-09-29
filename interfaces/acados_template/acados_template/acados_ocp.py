@@ -1398,6 +1398,29 @@ class AcadosOcp:
                 raise NotImplementedError('FILTERDDP solver does not support algebraic variables.')
             if opts.globalization != "FIXED_STEP":
                 raise NotImplementedError('FILTERDDP solver uses its own filter line search, set globalization == FIXED_STEP.')
+            # options of the SQP-type solvers and the QP solver that FILTERDDP does not use
+            defaults = AcadosOcpOptions()
+            ignored = ['globalization_fixed_step_length', 'globalization_alpha_reduction',
+                       'globalization_line_search_use_sufficient_descent', 'globalization_use_SOC',
+                       'globalization_funnel_init_increase_factor', 'globalization_funnel_init_upper_bound',
+                       'globalization_funnel_sufficient_decrease_factor', 'globalization_funnel_kappa',
+                       'globalization_funnel_fraction_switching_condition', 'globalization_funnel_initial_penalty_parameter',
+                       'globalization_funnel_use_merit_fun_only',
+                       'levenberg_marquardt', 'with_adaptive_levenberg_marquardt', 'adaptive_levenberg_marquardt_lam',
+                       'adaptive_levenberg_marquardt_mu_min', 'adaptive_levenberg_marquardt_mu0',
+                       'adaptive_levenberg_marquardt_obj_scalar', 'with_anderson_acceleration', 'anderson_activation_threshold',
+                       'fixed_hess', 'tau_min', 'nlp_solver_ext_qp_res', 'nlp_solver_warm_start_first_qp',
+                       'nlp_solver_warm_start_first_qp_from_nlp', 'nlp_qp_tol_strategy',
+                       'qp_solver_iter_max', 'qp_solver_tol_stat', 'qp_solver_tol_eq', 'qp_solver_tol_ineq', 'qp_solver_tol_comp',
+                       'qp_solver_warm_start', 'qp_solver_mu0', 'qpscaling_scale_constraints', 'qpscaling_scale_objective',
+                       'store_iterates', 'log_primal_step_norm', 'log_dual_step_norm', 'timeout_max_time']
+            changed = [name for name in ignored if getattr(opts, name) != getattr(defaults, name)]
+            # defaults set below by make_consistent for globalization FIXED_STEP
+            filled = {'globalization_alpha_min': 0.05, 'globalization_eps_sufficient_descent': 1e-4,
+                      'globalization_full_step_dual': 0, 'nlp_solver_tol_min_step_norm': 0.0}
+            changed += [name for name, value in filled.items() if getattr(opts, name) not in (None, value)]
+            if changed:
+                raise NotImplementedError(f'FILTERDDP solver does not use the options {", ".join(changed)}, leave them at their defaults.')
 
         if opts.qpscaling_scale_constraints != "NO_CONSTRAINT_SCALING" or opts.qpscaling_scale_objective != "NO_OBJECTIVE_SCALING":
             if opts.nlp_solver_type == "SQP_RTI":

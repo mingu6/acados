@@ -2470,7 +2470,12 @@ class AcadosOcpSolver:
                 'anderson_activation_threshold',
                 'levenberg_marquardt',
                 'adaptive_levenberg_marquardt_lam', 'adaptive_levenberg_marquardt_mu_min', 'adaptive_levenberg_marquardt_mu0',
-                'tau_min', 'filterddp_warm_start', 'filterddp_symmetric_value_hessian'
+                'tau_min', 'filterddp_warm_start', 'filterddp_symmetric_value_hessian',
+                'filterddp_mu_init', 'filterddp_ineq_dual_init', 'filterddp_kappa_1', 'filterddp_kappa_2', 'filterddp_reg_1',
+                'filterddp_reg_min', 'filterddp_reg_max', 'filterddp_kappa_bar_w_p', 'filterddp_kappa_w_p', 'filterddp_kappa_w_m',
+                'filterddp_kappa_eps', 'filterddp_kappa_mu', 'filterddp_theta_mu', 'filterddp_tau_min', 'filterddp_s_max',
+                'filterddp_eta_L', 'filterddp_s_L', 'filterddp_delta', 'filterddp_s_theta', 'filterddp_gamma_theta',
+                'filterddp_gamma_L', 'filterddp_theta_max_factor', 'filterddp_theta_min_factor'
 
         :param value: of type int, float, string, bool
 
@@ -2522,7 +2527,30 @@ class AcadosOcpSolver:
                          'qp_tol_comp',
                          'qp_tau_min',
                          'qp_mu0',
-                         'anderson_activation_threshold']
+                         'anderson_activation_threshold',
+                         'filterddp_mu_init',
+                         'filterddp_ineq_dual_init',
+                         'filterddp_kappa_1',
+                         'filterddp_kappa_2',
+                         'filterddp_reg_1',
+                         'filterddp_reg_min',
+                         'filterddp_reg_max',
+                         'filterddp_kappa_bar_w_p',
+                         'filterddp_kappa_w_p',
+                         'filterddp_kappa_w_m',
+                         'filterddp_kappa_eps',
+                         'filterddp_kappa_mu',
+                         'filterddp_theta_mu',
+                         'filterddp_tau_min',
+                         'filterddp_s_max',
+                         'filterddp_eta_L',
+                         'filterddp_s_L',
+                         'filterddp_delta',
+                         'filterddp_s_theta',
+                         'filterddp_gamma_theta',
+                         'filterddp_gamma_L',
+                         'filterddp_theta_max_factor',
+                         'filterddp_theta_min_factor']
         string_fields = []
         bool_fields = ['with_adaptive_levenberg_marquardt', 'warm_start_first_qp_from_nlp', 'warm_start_first_qp']
 
