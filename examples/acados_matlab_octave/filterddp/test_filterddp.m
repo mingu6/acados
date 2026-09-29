@@ -31,8 +31,8 @@
 % FILTERDDP through the MATLAB/Octave interface: the pendulum on cart of getting_started, stabilized from
 % near the upright with an active force limit, with a NONLINEAR_LS
 % cost, ERK dynamics and a nonlinear inequality on the control, solved with FILTERDDP (exact Hessian and
-% Gauss-Newton) and Gauss-Newton SQP as in getting_started. Checks that the solutions agree and that an option FILTERDDP does not
-% use is rejected.
+% Gauss-Newton) and Gauss-Newton SQP as in getting_started, and with the force limit softened. Checks that the
+% solutions agree and that an option FILTERDDP does not use is rejected.
 
 import casadi.*
 addpath(fullfile(fileparts(mfilename('fullpath')), '..', 'getting_started'));
@@ -42,15 +42,21 @@ N = 20;
 T = 1;
 x0 = [0; 0.5; 0; 0];  % near the upright equilibrium, where the solution is unique
 
-tags = {'filterddp_exact', 'filterddp_gauss_newton', 'sqp_gauss_newton'};
+tags = {'filterddp_exact', 'filterddp_gauss_newton', 'sqp_gauss_newton', 'filterddp_soft', 'sqp_soft'};
 x = cell(size(tags));
 u = cell(size(tags));
 for k = 1:numel(tags)
     ocp = filterddp_pendulum_ocp(N, T, x0, tags{k});
     solver = AcadosOcpSolver(ocp);
     solver.set('constr_x0', x0);
-    solver.set('init_x', zeros(4, N+1));
-    solver.set('init_u', zeros(1, N));
+    if strcmp(tags{k}, 'sqp_soft')
+        % from the FILTERDDP solution of the soft problem, which SQP must accept as a solution
+        solver.set('init_x', x{4});
+        solver.set('init_u', u{4});
+    else
+        solver.set('init_x', zeros(4, N+1));
+        solver.set('init_u', zeros(1, N));
+    end
     solver.solve();
     status = solver.get('status');
     fprintf('%s: status %d, %d iterations, cost %.10f\n', tags{k}, status, solver.get('sqp_iter'), solver.get_cost());
@@ -61,13 +67,16 @@ end
 n_active = sum(abs(u{3}(:)) > 20 - 1e-4);
 fprintf('%d stages at the force limit\n', n_active);
 assert(n_active > 0, 'force limit not active');
-for k = 1:2
-    err_x = max(abs(x{k}(:) - x{3}(:)));
-    err_u = max(abs(u{k}(:) - u{3}(:)));
-    fprintf('%s against SQP: max error x %.2e, u %.2e\n', tags{k}, err_x, err_u);
-    assert(err_x < 1e-4 * max(1, max(abs(x{3}(:)))) && err_u < 1e-4 * max(1, max(abs(u{3}(:)))), ...
-        sprintf('%s solution differs from SQP', tags{k}));
+for pair = {[1, 3], [2, 3], [4, 5]}
+    k = pair{1}(1);
+    r = pair{1}(2);
+    err_x = max(abs(x{k}(:) - x{r}(:)));
+    err_u = max(abs(u{k}(:) - u{r}(:)));
+    fprintf('%s against %s: max error x %.2e, u %.2e\n', tags{k}, tags{r}, err_x, err_u);
+    assert(err_x < 1e-4 * max(1, max(abs(x{r}(:)))) && err_u < 1e-4 * max(1, max(abs(u{r}(:)))), ...
+        sprintf('%s solution differs from %s', tags{k}, tags{r}));
 end
+assert(max(abs(u{5}(:))) > 20 + 1e-2, 'the soft force limit is not exceeded');
 
 % options of the SQP-type solvers that FILTERDDP does not use are rejected
 ocp = filterddp_pendulum_ocp(N, T, x0, 'filterddp_exact');
