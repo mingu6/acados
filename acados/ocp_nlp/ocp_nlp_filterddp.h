@@ -87,6 +87,7 @@ typedef struct
     int nlp_scaling;            // gradient based scaling of objective and constraints at the initial point
     double nlp_scaling_max_gradient;
     int warm_start;             // 1: initialize each solve from the shifted affine policy and final barrier parameter of the previous solve
+    int value_gradient_stationarity; // 1 (default): stationarity residual with the value gradient, plus its adjoint equation residual; 0: with the costate
     int symmetric_value_hessian; // 1: symmetrise the value function Hessian after each stage
 
 } ocp_nlp_filterddp_opts;

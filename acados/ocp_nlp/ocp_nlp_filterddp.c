@@ -150,6 +150,7 @@ void ocp_nlp_filterddp_opts_initialize_default(void *config_, void *dims_, void 
     opts->nlp_scaling = 0;
     opts->nlp_scaling_max_gradient = 100.0;
     opts->warm_start = 0;
+    opts->value_gradient_stationarity = 1;
     opts->symmetric_value_hessian = 1;
 
     return;
@@ -289,6 +290,10 @@ void ocp_nlp_filterddp_opts_set(void *config_, void *opts_, const char *field, v
     else if (!strcmp(field, "filterddp_warm_start"))
     {
         opts->warm_start = *(int *) value;
+    }
+    else if (!strcmp(field, "filterddp_value_gradient_stationarity"))
+    {
+        opts->value_gradient_stationarity = *(int *) value;
     }
     else if (!strcmp(field, "filterddp_symmetric_value_hessian"))
     {
@@ -1674,7 +1679,7 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
             // dual infeasibility
             for (int j = 0; j < nui; j++)
                 VEL(&work->Lu, j) = VEL(&work->lu, j) - VEL(zl, j) + VEL(zu, j);
-            blasfeo_dgemv_t(nxi, nui, 1.0, &work->fu, 0, 0, &work->lambda, 0, 1.0, &work->Lu, 0, &work->Lu, 0);
+            blasfeo_dgemv_t(nxi, nui, 1.0, &work->fu, 0, 0, opts->value_gradient_stationarity ? &work->Vx : &work->lambda, 0, 1.0, &work->Lu, 0, &work->Lu, 0);
             if (nhi > 0)
                 blasfeo_dgemv_t(nhi, nui, 1.0, &work->hu, 0, 0, phi, 0, 1.0, &work->Lu, 0, &work->Lu, 0);
             if (ngi > 0)
@@ -1728,6 +1733,17 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
                 blasfeo_dgemv_t(ngi, nxi, 1.0, &work->gx, 0, 0, nu_, 0, 1.0, &work->Vx_next, 0, &work->Vx_next, 0);
                 blasfeo_dgemv_t(ngi, nxi, 1.0, mem->psig_omegag+i, 0, 1, &work->q, 0, 1.0, &work->Vx_next, 0, &work->Vx_next, 0);
                 blasfeo_dgemv_t(ngi, nxi, 1.0, &work->gx, 0, 0, nu_, 0, 1.0, &work->lambda_next, 0, &work->lambda_next, 0);
+            }
+            if (opts->value_gradient_stationarity)
+            {
+                // adjoint equation residual of the value gradient as multiplier estimate
+                blasfeo_dgemv_t(nx[i+1], nxi, 1.0, &work->fx, 0, 0, &work->Vx, 0, 1.0, &work->lx, 0, &work->tmp_nv, 0);
+                if (nhi > 0)
+                    blasfeo_dgemv_t(nhi, nxi, 1.0, &work->hx, 0, 0, phi, 0, 1.0, &work->tmp_nv, 0, &work->tmp_nv, 0);
+                if (ngi > 0)
+                    blasfeo_dgemv_t(ngi, nxi, 1.0, &work->gx, 0, 0, nu_, 0, 1.0, &work->tmp_nv, 0, &work->tmp_nv, 0);
+                blasfeo_daxpy(nxi, -1.0, &work->Vx_next, 0, &work->tmp_nv, 0, &work->tmp_nv, 0);
+                mem->dual_inf = filterddp_max(mem->dual_inf, filterddp_norm_inf(nxi, &work->tmp_nv, 0));
             }
             blasfeo_dveccp(nxi, &work->Vx_next, 0, &work->Vx, 0);
             blasfeo_dveccp(nxi, &work->lambda_next, 0, &work->lambda, 0);

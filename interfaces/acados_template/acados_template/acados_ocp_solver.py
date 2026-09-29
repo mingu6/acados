@@ -2470,7 +2470,7 @@ class AcadosOcpSolver:
                 'anderson_activation_threshold',
                 'levenberg_marquardt',
                 'adaptive_levenberg_marquardt_lam', 'adaptive_levenberg_marquardt_mu_min', 'adaptive_levenberg_marquardt_mu0',
-                'tau_min', 'filterddp_warm_start', 'filterddp_symmetric_value_hessian'
+                'tau_min', 'filterddp_warm_start', 'filterddp_value_gradient_stationarity', 'filterddp_symmetric_value_hessian'
 
         :param value: of type int, float, string, bool
 
@@ -2496,6 +2496,7 @@ class AcadosOcpSolver:
                       'qp_print_level',
                       'qp_t0_init',
                       'filterddp_warm_start',
+                      'filterddp_value_gradient_stationarity',
                       'filterddp_symmetric_value_hessian']
         double_fields = ['globalization_fixed_step_length',
                          'globalization_alpha_min',
