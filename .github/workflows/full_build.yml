@@ -364,6 +364,13 @@ jobs:
         source ${{ github.workspace }}/acadosenv/bin/activate
         python test_filterddp.py
 
+    - name: FILTERDDP cost modules, integrators and Gauss-Newton Hessian
+      working-directory: ${{ github.workspace }}/examples/acados_python/filterddp
+      shell: bash
+      run: |
+        source ${{ github.workspace }}/acadosenv/bin/activate
+        python test_filterddp_formulations.py
+
     - name: FILTERDDP acrobot NMPC
       working-directory: ${{ github.workspace }}/examples/acados_python/filterddp
       shell: bash

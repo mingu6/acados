@@ -51,17 +51,17 @@ OBSTACLE = (1.0, 0.4, 0.3)
 V_MAX = 0.75  # not a multiple of DT times the acceleration limit, which would make the active set degenerate
 
 
+def dynamics(x, u):
+    return ca.vertcat(x[3]*ca.cos(x[2]), x[3]*ca.sin(x[2]), u[1], u[0])
+
+
 def export_model() -> AcadosModel:
     x = ca.SX.sym('x', NX)
     u = ca.SX.sym('u', NU)
-
-    def f(x, u):
-        return ca.vertcat(x[3]*ca.cos(x[2]), x[3]*ca.sin(x[2]), u[1], u[0])
-
-    k1 = f(x, u)
-    k2 = f(x + 0.5*DT*k1, u)
-    k3 = f(x + 0.5*DT*k2, u)
-    k4 = f(x + DT*k3, u)
+    k1 = dynamics(x, u)
+    k2 = dynamics(x + 0.5*DT*k1, u)
+    k3 = dynamics(x + 0.5*DT*k2, u)
+    k4 = dynamics(x + DT*k3, u)
 
     model = AcadosModel()
     model.name = 'filterddp_unicycle'
@@ -118,7 +118,7 @@ def setup(nlp_solver_type: str) -> AcadosOcp:
     else:
         opts.regularize_method = 'MIRROR'
         opts.globalization = 'MERIT_BACKTRACKING'
-    ocp.code_export_directory = f'c_generated_code_test_{nlp_solver_type.lower()}'
+    ocp.code_gen_options.code_export_directory = f'c_generated_code_test_{nlp_solver_type.lower()}'
     return ocp
 
 

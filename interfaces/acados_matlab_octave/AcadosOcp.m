@@ -1450,8 +1450,11 @@ classdef AcadosOcp < handle
                 if ~strcmp(opts.qp_solver, "PARTIAL_CONDENSING_HPIPM") || (opts.qp_solver_cond_N ~= opts.N_horizon)
                     error('FILTERDDP solver only supported for PARTIAL_CONDENSING_HPIPM with qp_solver_cond_N == N_horizon.');
                 end
-                if ~strcmp(opts.integrator_type, "DISCRETE")
-                    error('FILTERDDP solver only supported with DISCRETE integrator_type.');
+                if ~ismember(opts.integrator_type, {'DISCRETE', 'ERK', 'IRK'})
+                    error(['FILTERDDP solver only supported with DISCRETE, ERK or IRK integrator_type, got ', opts.integrator_type, '.']);
+                end
+                if ~strcmp(opts.cost_discretization, "EULER")
+                    error('FILTERDDP solver evaluates the cost separately from the dynamics, use cost_discretization == EULER.');
                 end
                 if any([dims.nbx_e, dims.ng_e, dims.nphi_e, dims.nh_e])
                     error('FILTERDDP solver does not support terminal constraints.')

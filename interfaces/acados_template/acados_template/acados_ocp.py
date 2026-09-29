@@ -1380,10 +1380,10 @@ class AcadosOcp:
                 raise ValueError("FILTERDDP solver only supported for N_horizon > 0.")
             if opts.qp_solver != "PARTIAL_CONDENSING_HPIPM" or opts.qp_solver_cond_N != opts.N_horizon:
                 raise ValueError(f'FILTERDDP solver only supported for PARTIAL_CONDENSING_HPIPM with qp_solver_cond_N == N, got qp solver {opts.qp_solver} and qp_solver_cond_N {opts.qp_solver_cond_N}, N {opts.N_horizon}.')
-            if opts.integrator_type != "DISCRETE":
-                raise NotImplementedError('FILTERDDP solver only supported with DISCRETE integrator_type.')
-            if opts.hessian_approx != "EXACT":
-                raise NotImplementedError('FILTERDDP solver requires hessian_approx == EXACT.')
+            if opts.integrator_type not in ("DISCRETE", "ERK", "IRK"):
+                raise NotImplementedError(f'FILTERDDP solver only supported with DISCRETE, ERK or IRK integrator_type, got {opts.integrator_type}.')
+            if opts.cost_discretization != "EULER":
+                raise NotImplementedError('FILTERDDP solver evaluates the cost separately from the dynamics, use cost_discretization == EULER.')
             if opts.regularize_method != "NO_REGULARIZE":
                 raise NotImplementedError('FILTERDDP solver performs its own inertia correction, use regularize_method == NO_REGULARIZE.')
             if dims.nbx_0 != dims.nx or dims.nbxe_0 != dims.nx:
@@ -1396,8 +1396,6 @@ class AcadosOcp:
                 raise NotImplementedError('FILTERDDP solver does not support soft constraints.')
             if dims.nz > 0:
                 raise NotImplementedError('FILTERDDP solver does not support algebraic variables.')
-            if not all([ct == "EXTERNAL" for ct in cost_types_to_check]):
-                raise NotImplementedError('FILTERDDP solver only supports EXTERNAL cost types.')
             if opts.globalization != "FIXED_STEP":
                 raise NotImplementedError('FILTERDDP solver uses its own filter line search, set globalization == FIXED_STEP.')
 
