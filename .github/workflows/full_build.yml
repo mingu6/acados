@@ -378,6 +378,13 @@ jobs:
         source ${{ github.workspace }}/acadosenv/bin/activate
         python test_filterddp_options.py
 
+    - name: FILTERDDP soft constraints
+      working-directory: ${{ github.workspace }}/examples/acados_python/filterddp
+      shell: bash
+      run: |
+        source ${{ github.workspace }}/acadosenv/bin/activate
+        python test_filterddp_soft.py
+
     - name: FILTERDDP acrobot NMPC
       working-directory: ${{ github.workspace }}/examples/acados_python/filterddp
       shell: bash

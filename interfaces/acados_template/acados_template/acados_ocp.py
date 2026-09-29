@@ -1392,8 +1392,6 @@ class AcadosOcp:
                 raise ValueError('FILTERDDP solver does not support terminal constraints.')
             if any([dims.nphi, dims.nphi_0]):
                 raise NotImplementedError('FILTERDDP solver does not support BGP constraints.')
-            if any([dims.ns, dims.ns_0, dims.ns_e]):
-                raise NotImplementedError('FILTERDDP solver does not support soft constraints.')
             if dims.nz > 0:
                 raise NotImplementedError('FILTERDDP solver does not support algebraic variables.')
             if opts.globalization != "FIXED_STEP":

@@ -127,6 +127,8 @@ typedef struct
     int *ngu;       // slack upper bounds
     int **idxh;     // index in [bx; g; h] of each equality row
     int **idxg;     // index in [bx; g; h] of each inequality row
+    int **idxs_row; // slack index of each row in [bu; bx; g; h], -1 if hard
+    int **idxs_g;   // slack index of each inequality row, -1 if hard
 
     // bounds gathered per stage in solver order
     struct blasfeo_dvec *ul;    // control lower bounds
@@ -137,6 +139,10 @@ typedef struct
     struct blasfeo_dvec *gu;    // slack upper bounds
     struct blasfeo_dvec *maskgl;
     struct blasfeo_dvec *maskgu;
+    struct blasfeo_dvec *lsl;    // lower bounds of the lower slacks of soft inequality rows
+    struct blasfeo_dvec *lsu;    // lower bounds of the upper slacks
+    struct blasfeo_dvec *masksl; // 1 if the lower side of an inequality row is soft
+    struct blasfeo_dvec *masksu;
 
     // iterate: nlp_out holds x, u; dual variables and slacks are solver specific
     struct blasfeo_dvec *s;     // inequality slacks
@@ -146,6 +152,8 @@ typedef struct
     struct blasfeo_dvec *zu;    // control upper bound multipliers
     struct blasfeo_dvec *zsl;   // slack lower bound multipliers
     struct blasfeo_dvec *zsu;   // slack upper bound multipliers
+    struct blasfeo_dvec *xil;   // multipliers of the lower bounds of the soft constraint slacks, which are in nlp_out->ux
+    struct blasfeo_dvec *xiu;
     // trial iterate
     struct blasfeo_dvec *s_trial;
     struct blasfeo_dvec *phi_trial;
@@ -154,6 +162,8 @@ typedef struct
     struct blasfeo_dvec *zu_trial;
     struct blasfeo_dvec *zsl_trial;
     struct blasfeo_dvec *zsu_trial;
+    struct blasfeo_dvec *xil_trial;
+    struct blasfeo_dvec *xiu_trial;
 
     // costate of the last backward pass, stages 0:N
     struct blasfeo_dvec *costate;
@@ -167,6 +177,10 @@ typedef struct
     struct blasfeo_dmat *chiu_zetau;      // nu x (nx+1)
     struct blasfeo_dmat *chisl_zetasl;    // ng x (nx+1)
     struct blasfeo_dmat *chisu_zetasu;    // ng x (nx+1)
+    struct blasfeo_dmat *sigl_rule;       // ng x (nx+1), soft constraint slacks
+    struct blasfeo_dmat *sigu_rule;
+    struct blasfeo_dmat *xil_rule;
+    struct blasfeo_dmat *xiu_rule;
 
     // constraint scaling
 
@@ -271,6 +285,24 @@ typedef struct
     struct blasfeo_dvec SigmasL;
     struct blasfeo_dvec SigmasU;
     struct blasfeo_dvec Sigmas;
+
+    // soft constraint terms per inequality row, zero for hard sides
+    struct blasfeo_dvec inv_el;   // 1/(sigl - lsl)
+    struct blasfeo_dvec inv_eu;
+    struct blasfeo_dvec Xil;      // xil/(sigl - lsl)
+    struct blasfeo_dvec Xiu;
+    struct blasfeo_dvec Qsigl;    // barrier gradient with respect to the slack
+    struct blasfeo_dvec Qsigu;
+    struct blasfeo_dvec rsigl;    // stationarity residual of the slack
+    struct blasfeo_dvec rsigu;
+    struct blasfeo_dvec inv_Dl;   // 1/(Zl + SigmasL + Xil)
+    struct blasfeo_dvec inv_Du;
+    struct blasfeo_dvec ksigl;    // SigmasL/Dl, feedback of the slack on s
+    struct blasfeo_dvec ksigu;
+    struct blasfeo_dvec csigl;    // SigmasL Qsigl/Dl
+    struct blasfeo_dvec csigu;
+    struct blasfeo_dvec wsl;      // (Zl + Xil)/Dl, factor of SigmasL after the elimination
+    struct blasfeo_dvec wsu;
 
     // stage KKT system
     struct blasfeo_dmat rhs_u;
