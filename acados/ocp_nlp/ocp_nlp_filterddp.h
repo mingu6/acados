@@ -57,7 +57,7 @@ typedef struct
 {
     ocp_nlp_opts *nlp_opts;
 
-    double mu_init;             // barrier parameter initialization (scaled by objective scaling)
+    double mu_init;             // barrier parameter initialization
     double ineq_dual_init;      // initial value of bound multipliers
     double kappa_1;             // fraction-to-boundary parameters for interior initialization
     double kappa_2;
@@ -84,8 +84,6 @@ typedef struct
     double theta_max_factor;    // maximum constraint violation accepted by the filter, relative to initial
     double theta_min_factor;    // constraint violation threshold for the switching condition, relative to initial
 
-    int nlp_scaling;            // gradient based scaling of objective and constraints at the initial point
-    double nlp_scaling_max_gradient;
     int warm_start;             // 1: initialize each solve from the shifted affine policy and final barrier parameter of the previous solve
     int value_gradient_stationarity; // 1 (default): stationarity residual with the value gradient, plus its adjoint equation residual; 0: with the costate
     int symmetric_value_hessian; // 1: symmetrise the value function Hessian after each stage
@@ -169,9 +167,6 @@ typedef struct
     struct blasfeo_dmat *chisu_zetasu;    // ng x (nx+1)
 
     // constraint scaling
-    struct blasfeo_dvec *h_scale;
-    struct blasfeo_dvec *g_scale;
-    double objective_scale;
 
     // filter
     double *filter;
@@ -241,7 +236,6 @@ typedef struct
     struct blasfeo_dvec lx;
     struct blasfeo_dvec lu;
     struct blasfeo_dvec h;
-    struct blasfeo_dvec h_scaled;
     struct blasfeo_dvec g;
     struct blasfeo_dvec q;
 
@@ -284,8 +278,6 @@ typedef struct
     struct blasfeo_dmat sol_tmp;
 
     // null space method
-    struct blasfeo_dmat hus;
-    struct blasfeo_dmat hxs;
     struct blasfeo_dmat lq;
     struct blasfeo_dmat Q;
     struct blasfeo_dmat Y;
