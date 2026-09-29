@@ -5,11 +5,17 @@ The file is HDF5 with Julia object references.  ``:split_traj_alt`` keys
 ``um`` (T torque impulses, Julia order), ``γm`` (T normal impulses, 4),
 ``bm`` (T split tangential impulses, 8 as [b+, b-] per contact), ``ψm`` (T),
 ``ηm`` (T, 8), ``μm``, ``hm``.  Impulses are force times ``hm``.
+
+The default gait is downloaded from ContactImplicitMPC.jl at a pinned
+revision, checked against its SHA-256, and cached in ``data/``; set
+``CIMPC_DIR`` to a local ContactImplicitMPC.jl clone to read it from there.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,9 +26,11 @@ from flamingo_model import (
     absolute_to_relative, julia_torque_to_pinocchio,
 )
 
-DEFAULT_CIMPC_DIR = Path(os.environ.get(
-    "CIMPC_DIR", Path.home() / "stuff" / "ContactImplicitMPC.jl"))
-DEFAULT_GAIT = "gait_forward_36_4.jld2"
+CIMPC_REPOSITORY = "dojo-sim/ContactImplicitMPC.jl"
+CIMPC_REVISION = "989c8e6d9675a00c1e342d80707007e82fbcb109"
+DEFAULT_GAIT = "src/dynamics/flamingo/gaits/gait_forward_36_4.jld2"
+DEFAULT_GAIT_SHA256 = "8e7b01ce970e8f8335a71073e6b5dd88f0629a369a20ddf32efef7fb0193e7bc"
+GAIT_CACHE = Path(__file__).resolve().parent / "data"
 
 
 @dataclass(frozen=True)
@@ -67,13 +75,36 @@ def _dereference(file: h5py.File, dataset: str) -> np.ndarray:
     return np.array([np.asarray(file[ref][()], dtype=float) for ref in refs])
 
 
+def default_gait_path() -> Path:
+    """``$CIMPC_DIR/<gait>`` if set, else the cached download of the pinned gait."""
+    if "CIMPC_DIR" in os.environ:
+        return Path(os.environ["CIMPC_DIR"]) / DEFAULT_GAIT
+    path = GAIT_CACHE / Path(DEFAULT_GAIT).name
+    if path.is_file():
+        return path
+    url = (f"https://raw.githubusercontent.com/{CIMPC_REPOSITORY}/"
+           f"{CIMPC_REVISION}/{DEFAULT_GAIT}")
+    try:
+        with urllib.request.urlopen(url, timeout=30) as response:
+            content = response.read()
+    except OSError as error:
+        raise FileNotFoundError(f"could not download the flamingo gait from {url}: {error}; "
+                                "set CIMPC_DIR to a ContactImplicitMPC.jl clone") from error
+    digest = hashlib.sha256(content).hexdigest()
+    if digest != DEFAULT_GAIT_SHA256:
+        raise ValueError(f"flamingo gait from {url} has SHA-256 {digest}, "
+                         f"expected {DEFAULT_GAIT_SHA256}")
+    GAIT_CACHE.mkdir(exist_ok=True)
+    path.write_bytes(content)
+    return path
+
+
 def load_gait(path: str | Path | None = None) -> FlamingoGait:
-    path = Path(path) if path is not None else (
-        DEFAULT_CIMPC_DIR / "src" / "dynamics" / "flamingo" / "gaits" / DEFAULT_GAIT)
+    path = Path(path) if path is not None else default_gait_path()
     if not path.is_file():
         raise FileNotFoundError(
-            f"flamingo gait not found at {path}; set CIMPC_DIR to the "
-            "ContactImplicitMPC.jl checkout")
+            f"flamingo gait not found at {path}; set CIMPC_DIR to a "
+            "ContactImplicitMPC.jl clone")
     with h5py.File(path, "r") as file:
         gait = FlamingoGait(
             q_abs=_dereference(file, "qm"),

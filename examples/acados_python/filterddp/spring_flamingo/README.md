@@ -1,16 +1,17 @@
 # Contact-Implicit Spring Flamingo Walking OCP
 
 This document defines and reproduces a planar Spring Flamingo walking gait
-in the spirit of Posa, Cantu, and Tedrake (2013, "A Direct Method for
-Trajectory Optimization of Rigid Bodies Through Contact", Secs. 3 and 4.3).
+in the spirit of Posa, Cantu, and Tedrake (2013, ["A Direct Method for
+Trajectory Optimization of Rigid Bodies Through Contact"](https://doi.org/10.1177/0278364913506757),
+Secs. 3 and 4.3).
 The problem minimizes the mechanical cost of transport of one periodic half
 stride. It uses no mode schedule and no reference trajectory:
 
 - the contact sequence emerges from complementarity constraints;
 - the swing foot is kept off the ground by a speed-dependent clearance rule.
 
-The mechanics follow the variational contact-implicit form of the
-FilterDDPpinocchio project (`docs/contact_implicit_biped_ocp.md`). Pinocchio
+The mechanics are a variational (midpoint inverse-dynamics) contact-implicit
+integrator in which the next configuration is a control. Pinocchio
 evaluates kinematics and inverse dynamics through its CasADi scalar type, and
 the acados FilterDDP solver solves the OCP. The implementation is in this
 directory.
@@ -19,12 +20,11 @@ directory.
 
 | Source | Role | Revision |
 | --- | --- | --- |
-| Posa, Cantu, Tedrake 2013 | Problem, complementarity contact, cost of transport, mirror periodicity, Figs. 5-6 | Sept 4, 2013 preprint |
-| `~/stuff/ContactImplicitMPC.jl` | Flamingo parameters and kinematics; gait `gait_forward_36_4.jld2` for the start state, stride, and model-parity tests | `989c8e6` |
-| FilterDDPpinocchio | Variational mechanics and maximum-dissipation friction (`docs/contact_implicit_biped_ocp.md`) | `8572095` + working tree |
-| This repository (branch `filterddp`) | FilterDDP NLP solver in acados | `da2bd8bd0` on upstream `00947ddc3` |
-| Pinocchio | Rigid-body model, RNEA, frames, CasADi scalar type | conda-forge `pinocchio-python` 4.1.0 |
-| CasADi | Expressions and code generation | 3.7.2 |
+| [Posa, Cantu, Tedrake 2013](https://doi.org/10.1177/0278364913506757) | Problem, complementarity contact, cost of transport, mirror periodicity, Figs. 5-6 | Sept 4, 2013 preprint |
+| [ContactImplicitMPC.jl](https://github.com/dojo-sim/ContactImplicitMPC.jl) | Flamingo parameters and kinematics; gait [`gait_forward_36_4.jld2`](https://github.com/dojo-sim/ContactImplicitMPC.jl/blob/989c8e6d9675a00c1e342d80707007e82fbcb109/src/dynamics/flamingo/gaits/gait_forward_36_4.jld2) for the start state, stride, and model-parity tests | [`989c8e6`](https://github.com/dojo-sim/ContactImplicitMPC.jl/tree/989c8e6d9675a00c1e342d80707007e82fbcb109) |
+| [mingu6/acados, branch `filterddp`](https://github.com/mingu6/acados/tree/filterddp) | FilterDDP NLP solver in acados | [`da2bd8bd0`](https://github.com/mingu6/acados/commit/da2bd8bd0) on upstream [acados `00947ddc3`](https://github.com/acados/acados/commit/00947ddc394b30c956d9a7794d0bbcbc44c7c050) |
+| [Pinocchio](https://github.com/stack-of-tasks/pinocchio) | Rigid-body model, RNEA, frames, CasADi scalar type | conda-forge `pinocchio-python` 4.1.0 |
+| [CasADi](https://github.com/casadi/casadi) | Expressions and code generation | 3.7.2 |
 
 Posa gives no numerical Spring Flamingo parameters, so the robot is
 ContactImplicitMPC.jl's `flamingo` model. Posa's cost-of-transport values
@@ -36,10 +36,11 @@ a target.
 ### Physical parameters
 
 All seven bodies are planar rigid links in the $x$-$z$ plane. Gravity is
-$g=9.81$ m/s$^2$ along $-z$. The values are from
-`ContactImplicitMPC.jl/src/dynamics/flamingo/model.jl:452-495`:
+$g=9.81$ m/s² along $-z$. The values are from
+[`src/dynamics/flamingo/model.jl:452-495`](https://github.com/dojo-sim/ContactImplicitMPC.jl/blob/989c8e6d9675a00c1e342d80707007e82fbcb109/src/dynamics/flamingo/model.jl#L452-L495)
+of ContactImplicitMPC.jl:
 
-| Body | Mass [kg] | Pitch inertia about COM [kg m$^2$] | Length [m] | COM offset from proximal joint [m] |
+| Body | Mass [kg] | Pitch inertia about COM [kg m²] | Length [m] | COM offset from proximal joint [m] |
 | --- | ---: | ---: | ---: | ---: |
 | Torso | 12.0 | 0.10 | 0.385 (drawing only) | 0.20 (up from hip) |
 | Thigh (×2) | 0.4598 | 0.01256 | 0.42 (hip→knee) | 0.21 |
@@ -56,9 +57,9 @@ parameters and is not used.
 The model is built programmatically (`flamingo_model.build_model`). Joint
 order fixes the configuration
 
-$$
+```math
 q=(x,z,\theta,\phi_{h1},\phi_{k1},\phi_{a1},\phi_{h2},\phi_{k2},\phi_{a2})\in\mathbb R^9,
-$$
+```
 
 where:
 
@@ -88,16 +89,16 @@ operational frames on the ankles:
 
 The sole lies along the foot frame's $x$ axis, so a zero ankle angle holds
 the foot perpendicular to the calf. $p_i(q)=(p^x_i,p^z_i)$ denotes the
-position of contact $i\in\{\text{toe1},\text{heel1},\text{toe2},\text{heel2}\}$,
+position of contact $`i\in\{\text{toe1},\text{heel1},\text{toe2},\text{heel2}\}`$,
 and $J_i(q)=\partial p_i/\partial q\in\mathbb R^{2\times9}$ its Jacobian.
 $J_i$ equals the $x,z$ rows of Pinocchio's `LOCAL_WORLD_ALIGNED` frame
 Jacobian because $q$ is Euclidean.
 
 Mirror periodicity swaps the legs:
 
-$$
+```math
 Pq=(x,z,\theta,\phi_{h2},\phi_{k2},\phi_{a2},\phi_{h1},\phi_{k1},\phi_{a1}).
-$$
+```
 
 The Julia model uses absolute link angles $q^{\mathrm{abs}}$. The two
 conventions are related by the constant affine map $q=Tq^{\mathrm{abs}}+c$,
@@ -112,19 +113,19 @@ The time step $h=0.0156728$ s and the stride come from the gait. The stored
 gait has 70 intervals and advances $0.23172$ m, as two mirror-symmetric
 steps. The OCP covers one step:
 
-$$
+```math
 N=35,\qquad Nh=0.5485\ \mathrm{s},\qquad
 d=\tfrac12\cdot0.23172=0.11586\ \mathrm{m},\qquad \bar v=0.211\ \mathrm{m/s}.
-$$
+```
 
 The state holds two consecutive configurations, and the next configuration
 is a control. This gives explicit shift dynamics, which is the form acados
 FilterDDP requires:
 
-$$
+```math
 x_k=(q_{k-1},q_k)\in\mathbb R^{18},\qquad
 x_{k+1}=f(x_k,u_k)=(q_k,\;q_{k+1}).
-$$
+```
 
 The start state $x_0=(q_0,q_1)$ is fixed to the first two gait knots.
 acados FilterDDP requires a fixed $x_0$.
@@ -152,42 +153,43 @@ interval.
 All rows are functions of $(x_k,u_k)$ and a per-stage parameter
 $(q^\star_k,f_k)$, the periodic target and its flag. With
 
-$$
+```math
 \bar q_k=\tfrac12(q_k+q_{k+1}),\qquad
 v_k=\frac{q_{k+1}-q_k}{h},\qquad
 a_k=\frac{q_{k-1}-2q_k+q_{k+1}}{h^2},
-$$
+```
 
 each stage imposes the following.
 
 **Mechanics** (9 equalities): midpoint inverse dynamics integrated over the
 interval,
 
-$$
+```math
 h\left[\mathrm{RNEA}(\bar q_k,v_k,a_k)-S^T\tau_k\right]-\sum_{i=1}^4J_i(\bar q_k)^Tp_i=0,
-$$
+```
 
-where $S\in\{0,1\}^{6\times9}$ selects the six actuated joints. RNEA
-includes gravity. This is the scheme of FilterDDPpinocchio's
-`docs/contact_implicit_biped_ocp.md`.
+where $`S\in\{0,1\}^{6\times9}`$ selects the six actuated joints. RNEA
+includes gravity. It is the discrete Euler-Lagrange equation of the
+midpoint rule, written with RNEA so that no mass matrix or bias vector is
+formed explicitly.
 
 **Unilateral contact** (4 equalities, 4 inequalities): the gap is the height
 of each contact at the next knot on flat ground,
 
-$$
+```math
 g_i=p_i^z(q_{k+1})\ge0,\qquad p_{n,i}\,g_i-\sigma_{n,i}=0,\qquad p_{n,i},\sigma_{n,i}\ge0.
-$$
+```
 
 **Maximum-dissipation friction** (12 equalities, 8 inequalities): Coulomb
 friction solves $\min_{p_t}v_tp_t$ subject to $|p_t|\le\mu p_n$. With
 tangential velocity $v_{t,i}=[p_i^x(q_{k+1})-p_i^x(q_k)]/h$ and $\mu=0.74$,
 its relaxed KKT conditions are
 
-$$
+```math
 s_i^\pm=\mu p_{n,i}\mp p_{t,i}\ge0,\qquad
 v_{t,i}+\lambda_i^+-\lambda_i^-=0,\qquad
 \lambda_i^\pm s_i^\pm-\sigma^\pm_{f,i}=0.
-$$
+```
 
 A sliding contact is therefore pushed to the cone face opposing its motion,
 while a sticking contact may carry any impulse inside the cone.
@@ -195,10 +197,10 @@ while a sticking contact may carry any impulse inside the cone.
 **Speed-dependent clearance** (4 inequalities): a contact point moving
 horizontally must be off the ground in proportion to its speed,
 
-$$
+```math
 g_i-\tau_c\left(\sqrt{v_{t,i}^2+\delta^2}-\delta\right)\ge0,\qquad
 \tau_c=0.02\ \mathrm{s},\quad \delta=0.01\ \mathrm{m/s}.
-$$
+```
 
 A stance point ($v_{t,i}=0$) is left with $g_i\ge0$, so the rule needs no
 contact schedule and does not conflict with complementarity. A swinging
@@ -209,25 +211,25 @@ cost-of-transport optimum skims the swing foot along the ground. Posa
 reports the same effect for Spring Flamingo in the Fig. 5 caption.
 
 **Mirror periodicity** (9 equalities): the end state must be the mirrored
-start state advanced by one step, $x_N=(Pq_0+de_x,\;Pq_1+de_x)$. acados
+start state advanced by one step, $`x_N=(Pq_0+de_x,\;Pq_1+de_x)`$. acados
 FilterDDP supports no terminal constraints, so this is imposed on the
 controls $q_{N-1}$ and $q_N$ of stages $N-2$ and $N-1$. Every stage carries
 the same nine rows:
 
-$$
+```math
 f_k\left(q_{k+1}-q^\star_k\right)+(1-f_k)\,\zeta_k=0,\qquad
 f_k=\begin{cases}1,&k\in\{N-2,N-1\}\\0,&\text{otherwise.}\end{cases}
-$$
+```
 
 Where $f_k=1$ the row pins $q_{k+1}=q^\star_k$; elsewhere it pins
 $\zeta_k=0$. Either way the block is an identity in distinct control
 columns. The targets are
 
-$$
+```math
 q^\star_{N-2}=Pq_0+de_x+\ell_0e_z,\qquad
 q^\star_{N-1}=Pq_1+de_x+\ell_1e_z,\qquad
 \ell_j=\max\!\Big(0,\;g_{\min}-\min_i p_i^z(Pq_j+de_x)\Big).
-$$
+```
 
 The lift $\ell_j$ with $g_{\min}=2\times10^{-6}$ m keeps every gap at a
 pinned knot strictly positive. A pinned knot cannot move, so a zero gap
@@ -240,7 +242,7 @@ per stage with a null-space method. This needs $n_{\mathrm{eq}}\le n_u$
 ($34\le52$) and a full-row-rank control Jacobian, which the solver does not
 check. The rank is structural:
 
-- the mechanics block contains $\partial(h\,\mathrm{RNEA})/\partial q_{k+1}\approx M(\bar q_k)/h$, which is nonsingular;
+- the mechanics block contains $`\partial(h\,\mathrm{RNEA})/\partial q_{k+1}\approx M(\bar q_k)/h`$, which is nonsingular;
 - the 16 complementarity and stationarity rows each carry a $-1$ in a
   distinct relaxation or dual column;
 - the periodicity rows are identities in $q_{k+1}$ or $\zeta_k$.
@@ -254,19 +256,19 @@ receive solver-managed slacks.
 The running cost is a smooth mechanical cost of transport, Posa's Eq. 37,
 plus regularization and relaxation penalties:
 
-$$
+```math
 \ell_k=\underbrace{\frac{h}{mgd}\sum_{j=1}^{6}\left(\sqrt{(\tau_{k,j}\,\omega_{k,j})^2+\varepsilon^2}-\varepsilon\right)}_{\text{cost of transport}}
 +10^{-4}h\lVert\tau_k\rVert^2+10^{-3}\lVert p_k\rVert^2
 +10^{6}\left(\lVert\sigma_{n,k}\rVert^2+\lVert\sigma_{f,k}\rVert^2\right)
-+2\,\mathbf 1^T\!\begin{bmatrix}\sigma_{n,k}\\\sigma_{f,k}\end{bmatrix}
++2\left(\mathbf 1^T\sigma_{n,k}+\mathbf 1^T\sigma_{f,k}\right)
 +\frac{w_sh}{2}\sum_{i=1}^4r_{i,k}^2+10^{-3}\lVert\zeta_k\rVert^2,
-$$
+```
 
 where:
 
-- $\omega_k=S\,v_k$ are the actuated joint rates, so $\tau\omega$ is joint power;
+- $`\omega_k=S\,v_k`$ are the actuated joint rates, so $\tau\omega$ is joint power;
 - $\varepsilon=0.1$ W smooths $|\tau\omega|$;
-- the slip residual is $r_{i,k}=(p_{n,i}/p_{\mathrm{ref}})\,v_{t,i}$ with
+- the slip residual is $`r_{i,k}=(p_{n,i}/p_{\mathrm{ref}})\,v_{t,i}`$ with
   $p_{\mathrm{ref}}=\tfrac14mgh$ and $w_s=1000$, so it weights tangential
   speed by load.
 
@@ -283,14 +285,14 @@ The guess uses no gait data beyond the boundary state $q_1$ and the periodic
 end configuration $q_e=Pq_1+de_x$ (`flamingo_ocp.initial_knots`). For knot
 $j$ with $t=j/N$:
 
-- The hip position and pitch are linear: $(x,z,\theta)_j=(1-t)(x,z,\theta)_{q_1}+t\,(x,z,\theta)_{q_e}$.
+- The hip position and pitch are linear: $`(x,z,\theta)_j=(1-t)(x,z,\theta)_{q_1}+t\,(x,z,\theta)_{q_e}`$.
 - The swing foot is the foot whose ankle moves between $q_1$ and $q_e$
   (foot 1 moves 0.232 m; foot 2 stays). Its ankle follows
 
-  $$
+  ```math
   a(t)=a_s+s(\varphi)(a_e-a_s)+16A\varphi^2(1-\varphi)^2e_z,\qquad
   \varphi=\mathrm{clip}\!\left(\tfrac{t-0.15}{0.7},0,1\right),\quad s(\varphi)=3\varphi^2-2\varphi^3 .
-  $$
+  ```
 
   Here $s$ is the cubic Bezier with control points $(0,0,1,1)$, and the
   bump is a quartic Bernstein polynomial with apex $A=4$ cm. The swing
@@ -333,7 +335,7 @@ Settings (`flamingo_ocp.make_ocp`):
 | `filterddp_mu_init`, `filterddp_reg_1` | 0.1, $10^{-2}$ (set through ctypes; the Python template has no fields) |
 | other `filterddp_*` options | C defaults, including `kappa_1 = kappa_2 = 0.01` |
 
-The fork's `pi` export writes the same vector to every stage, so acados
+The FilterDDP `pi` export writes the same vector to every stage, so acados
 residuals are not used. Every reported check is recomputed in numpy from the
 returned trajectory (`contact_implicit_numpy`, `solve_flamingo.evaluate_trajectory`).
 
@@ -342,7 +344,7 @@ returned trajectory (`contact_implicit_numpy`, `solve_flamingo.evaluate_trajecto
 `python -m pytest tests` runs 25 deterministic tests with fixed seeds:
 
 - `test_flamingo_model.py` (9): the Pinocchio model agrees with a numpy
-  transcription of `model.jl`. Contact positions, centre of mass, mass
+  transcription of [`model.jl`](https://github.com/dojo-sim/ContactImplicitMPC.jl/blob/989c8e6d9675a00c1e342d80707007e82fbcb109/src/dynamics/flamingo/model.jl). Contact positions, centre of mass, mass
   matrix ($T^{-T}M^{\mathrm{abs}}T^{-1}$ against CRBA), and Lagrangian agree
   to $10^{-12}$ over 64 random configurations. The contact Jacobians agree
   analytically and with central differences. The Julia actuation matrix
@@ -440,11 +442,13 @@ python -m pytest tests -q                     # 25 tests, including one full sol
 ./reproduce.sh                                # solution, figure, and spread study
 ```
 
-`CIMPC_DIR` selects the ContactImplicitMPC.jl checkout; the default is
-`~/stuff/ContactImplicitMPC.jl`. `reproduce.sh` always uses this checkout
+The gait is downloaded on first use from ContactImplicitMPC.jl at
+[`989c8e6`](https://github.com/dojo-sim/ContactImplicitMPC.jl/tree/989c8e6d9675a00c1e342d80707007e82fbcb109), checked against its SHA-256, and cached in
+`data/`. Set `CIMPC_DIR` to a local ContactImplicitMPC.jl clone to read it
+from there instead. `reproduce.sh` always uses the acados tree it sits in
 (override with `FILTERDDP_ACADOS_DIR`): an `ACADOS_SOURCE_DIR` pointing at
-upstream acados, which has no FilterDDP, fails at compile time. It writes to `output/`, which is ignored by
-git:
+upstream acados, which has no FilterDDP, fails at compile time. It writes to
+`output/`, which is ignored by git:
 
 - `output/flamingo/`: `trajectory.csv` and `initial_trajectory.csv`
   (configurations, contact positions, torques, and per-contact impulses,
@@ -464,7 +468,7 @@ Sequence":
 
 - Robot parameters are ContactImplicitMPC.jl's, not the original Spring
   Flamingo's.
-- The mechanics are this repository's midpoint RNEA scheme. Posa uses
+- The mechanics are the midpoint RNEA scheme above. Posa uses
   backward Euler on $(q,\dot q)$, and ContactImplicitMPC.jl uses the
   momentum form with $J(q_{k+1})$.
 - Friction is the maximum-dissipation KKT system with relaxations penalized

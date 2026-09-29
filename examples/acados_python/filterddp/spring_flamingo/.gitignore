@@ -3,3 +3,4 @@ c_generated_code/
 output/
 __pycache__/
 .pytest_cache/
+data/

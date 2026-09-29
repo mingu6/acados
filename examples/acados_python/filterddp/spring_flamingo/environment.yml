@@ -1,6 +1,6 @@
 # conda env create -f environment.yml
-# then: pip install --no-deps -e <acados-filterddp>/interfaces/acados_template
-# and export ACADOS_SOURCE_DIR / LD_LIBRARY_PATH to the FilterDDP fork.
+# then: pip install --no-deps -e ../../../../interfaces/acados_template
+# and export ACADOS_SOURCE_DIR / LD_LIBRARY_PATH to this acados tree (README.md).
 name: flamingo-acados
 channels:
   - conda-forge
