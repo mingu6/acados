@@ -357,6 +357,13 @@ jobs:
     - name: Setup Python Environment
       uses: ./.github/actions/setup-python-environment
 
+    - name: FILTERDDP solution, multipliers and sensitivities against SQP
+      working-directory: ${{ github.workspace }}/examples/acados_python/filterddp
+      shell: bash
+      run: |
+        source ${{ github.workspace }}/acadosenv/bin/activate
+        python test_filterddp.py
+
     - name: FILTERDDP acrobot NMPC
       working-directory: ${{ github.workspace }}/examples/acados_python/filterddp/acrobot
       shell: bash
