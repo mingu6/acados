@@ -1083,7 +1083,6 @@ void ocp_nlp_ddp_config_initialize_default(void *config_)
     config->opts_update = &ocp_nlp_ddp_opts_update;
     config->opts_set = &ocp_nlp_ddp_opts_set;
     config->opts_set_at_stage = &ocp_nlp_ddp_opts_set_at_stage;
-    config->get_at_stage = NULL;
     config->memory_calculate_size = &ocp_nlp_ddp_memory_calculate_size;
     config->memory_assign = &ocp_nlp_ddp_memory_assign;
     config->workspace_calculate_size = &ocp_nlp_ddp_workspace_calculate_size;
