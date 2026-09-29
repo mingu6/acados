@@ -13,8 +13,8 @@ stride. It uses no mode schedule and no reference trajectory:
 ![Spring Flamingo full stride: the default solution of this OCP](media/flamingo.gif)
 
 The animation is the default solution of the Results section, unrolled to a
-full stride with its mirror symmetry (`./reproduce.sh` regenerates it as
-`output/flamingo/flamingo.gif`).
+full stride with its mirror symmetry (`./reproduce.sh` regenerates it and
+the figure below as `output/flamingo/flamingo.gif` and `.png`).
 
 The mechanics are a variational (midpoint inverse-dynamics) contact-implicit
 integrator in which the next configuration is a control. Pinocchio
@@ -394,6 +394,13 @@ code generation.
 | Max load-weighted slip speed | 0.0023 m/s |
 | Torque range | $[-28.5, 8.4]$ N m (the $\pm100$ N m bound is inactive) |
 | Swing apex, peak swing speed | 5.2 cm, 0.91 m/s |
+
+![Posa-style figure of the default solution: filmstrip, CM height, and per-foot contact modes](media/flamingo.png)
+
+The figure follows Posa Figs. 5-6: a filmstrip of the full stride, the CM
+height, and each foot's contact mode, with the Bezier initial guess dashed.
+The guess's $10^{-3}$ normal impulses are below the 1% body-weight loading
+threshold, so its feet read as swing throughout.
 
 **Contact modes compared with Posa Fig. 6.** `gait_metrics.py` labels each
 interval and foot as S (toe and heel loaded), T (toe only), H (heel only), or
