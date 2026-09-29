@@ -1468,8 +1468,8 @@ classdef AcadosOcp < handle
                 if any([dims.nbx_e, dims.ng_e, dims.nphi_e, dims.nh_e])
                     error('FILTERDDP solver does not support terminal constraints.')
                 end
-                if any([dims.ns, dims.ns_0, dims.ns_e, dims.nphi, dims.nphi_0, dims.nz])
-                    error('FILTERDDP solver does not support soft constraints, BGP constraints or algebraic variables.')
+                if any([dims.nphi, dims.nphi_0, dims.nz])
+                    error('FILTERDDP solver does not support BGP constraints or algebraic variables.')
                 end
                 % options of the SQP-type solvers and the QP solver that FILTERDDP does not use
                 defaults = AcadosOcpOptions();

@@ -29,7 +29,8 @@
 %
 
 function ocp = filterddp_pendulum_ocp(N, T, x0, tag)
-    % pendulum on cart OCP of getting_started for FILTERDDP (tag filterddp_exact, filterddp_gauss_newton) or SQP (sqp_gauss_newton)
+    % pendulum on cart OCP of getting_started for FILTERDDP (tag filterddp_exact, filterddp_gauss_newton,
+    % filterddp_soft) or SQP (sqp_gauss_newton, sqp_soft); the _soft tags soften the force limit
     model = get_pendulum_on_cart_model();
     nx = length(model.x);
     nu = length(model.u);
@@ -59,6 +60,19 @@ function ocp = filterddp_pendulum_ocp(N, T, x0, tag)
     ocp.constraints.uh = U_max;
     ocp.constraints.uh_0 = U_max;
     ocp.constraints.x0 = x0;
+    if endsWith_custom(tag, '_soft')
+        % soft force limit with a penalty weak enough to be exceeded at the optimum
+        ocp.constraints.idxsh = 0;
+        ocp.constraints.idxsh_0 = 0;
+        ocp.cost.zl = 2.0;
+        ocp.cost.zu = 2.0;
+        ocp.cost.Zl = 1.0;
+        ocp.cost.Zu = 1.0;
+        ocp.cost.zl_0 = 2.0;
+        ocp.cost.zu_0 = 2.0;
+        ocp.cost.Zl_0 = 1.0;
+        ocp.cost.Zu_0 = 1.0;
+    end
 
     opts = ocp.solver_options;
     opts.N_horizon = N;
@@ -75,7 +89,9 @@ function ocp = filterddp_pendulum_ocp(N, T, x0, tag)
         opts.nlp_solver_type = 'FILTERDDP';
         opts.regularize_method = 'NO_REGULARIZE';
         opts.globalization = 'FIXED_STEP';
-        if strcmp(tag, 'filterddp_gauss_newton')
+        if strcmp(tag, 'filterddp_soft')
+            opts.hessian_approx = 'EXACT';
+        elseif strcmp(tag, 'filterddp_gauss_newton')
             opts.hessian_approx = 'GAUSS_NEWTON';
             % FILTERDDP options through code generation
             opts.filterddp_mu_init = 0.1;

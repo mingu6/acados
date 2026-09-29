@@ -354,20 +354,20 @@ acados_size_t ocp_nlp_filterddp_memory_calculate_size(void *config_, void *dims_
 
     // classification
     size += 6*N*sizeof(int);
-    size += 2*N*sizeof(int *);
+    size += 4*N*sizeof(int *);
     for (int i = 0; i < N; i++)
     {
-        size += 2*ni[i]*sizeof(int);
+        size += 4*ni[i]*sizeof(int);
     }
 
-    // per stage vectors: 8 bounds, 7 iterate, 7 trial, 2 scaling
-    size += 24*N*sizeof(struct blasfeo_dvec);
+    // per stage vectors: 12 bounds, 9 iterate, 9 trial, 2 scaling
+    size += 32*N*sizeof(struct blasfeo_dvec);
     // costate
     size += (N+1)*sizeof(struct blasfeo_dvec);
     for (int i = 0; i <= N; i++)
         size += blasfeo_memsize_dvec(nx[i]);
-    // per stage matrices: 8 update rules
-    size += 8*N*sizeof(struct blasfeo_dmat);
+    // per stage matrices: 12 update rules
+    size += 12*N*sizeof(struct blasfeo_dmat);
     for (int i = 0; i < N; i++)
     {
         size += 4*blasfeo_memsize_dvec(nu[i]);         // ul, uu, maskul, maskuu
@@ -377,6 +377,8 @@ acados_size_t ocp_nlp_filterddp_memory_calculate_size(void *config_, void *dims_
         size += 2*blasfeo_memsize_dvec(ni[i]);         // nu, nu_trial
         size += 4*blasfeo_memsize_dvec(nu[i]);         // zl, zu, zl_trial, zu_trial
         size += 4*blasfeo_memsize_dvec(ni[i]);         // zsl, zsu, zsl_trial, zsu_trial
+        size += 8*blasfeo_memsize_dvec(ni[i]);         // lsl, lsu, masksl, masksu, xil, xiu, xil_trial, xiu_trial
+        size += 4*blasfeo_memsize_dmat(ni[i], nx[i]+1);   // sigl_rule, sigu_rule, xil_rule, xiu_rule
         size += 4*blasfeo_memsize_dmat(nu[i], nx[i]+1);   // alpha_beta, chil_zetal, chiu_zetau + spare
         size += 4*blasfeo_memsize_dmat(ni[i], nx[i]+1);   // alphas_betas, psih_omegah, psig_omegag, chisl_zetasl, chisu_zetasu
         size += blasfeo_memsize_dmat(ni[i], nx[i]+1);
@@ -442,10 +444,14 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
     assign_and_advance_int(N, &mem->ngu, &c_ptr);
     assign_and_advance_int_ptrs(N, &mem->idxh, &c_ptr);
     assign_and_advance_int_ptrs(N, &mem->idxg, &c_ptr);
+    assign_and_advance_int_ptrs(N, &mem->idxs_row, &c_ptr);
+    assign_and_advance_int_ptrs(N, &mem->idxs_g, &c_ptr);
     for (int i = 0; i < N; i++)
     {
         assign_and_advance_int(ni[i], &mem->idxh[i], &c_ptr);
         assign_and_advance_int(ni[i], &mem->idxg[i], &c_ptr);
+        assign_and_advance_int(ni[i], &mem->idxs_row[i], &c_ptr);
+        assign_and_advance_int(ni[i], &mem->idxs_g[i], &c_ptr);
     }
 
     // vector structs
@@ -471,6 +477,14 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
     assign_and_advance_blasfeo_dvec_structs(N, &mem->zu_trial, &c_ptr);
     assign_and_advance_blasfeo_dvec_structs(N, &mem->zsl_trial, &c_ptr);
     assign_and_advance_blasfeo_dvec_structs(N, &mem->zsu_trial, &c_ptr);
+    assign_and_advance_blasfeo_dvec_structs(N, &mem->lsl, &c_ptr);
+    assign_and_advance_blasfeo_dvec_structs(N, &mem->lsu, &c_ptr);
+    assign_and_advance_blasfeo_dvec_structs(N, &mem->masksl, &c_ptr);
+    assign_and_advance_blasfeo_dvec_structs(N, &mem->masksu, &c_ptr);
+    assign_and_advance_blasfeo_dvec_structs(N, &mem->xil, &c_ptr);
+    assign_and_advance_blasfeo_dvec_structs(N, &mem->xiu, &c_ptr);
+    assign_and_advance_blasfeo_dvec_structs(N, &mem->xil_trial, &c_ptr);
+    assign_and_advance_blasfeo_dvec_structs(N, &mem->xiu_trial, &c_ptr);
     assign_and_advance_blasfeo_dvec_structs(N+1, &mem->costate, &c_ptr);
 
     // matrix structs
@@ -482,6 +496,10 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
     assign_and_advance_blasfeo_dmat_structs(N, &mem->chiu_zetau, &c_ptr);
     assign_and_advance_blasfeo_dmat_structs(N, &mem->chisl_zetasl, &c_ptr);
     assign_and_advance_blasfeo_dmat_structs(N, &mem->chisu_zetasu, &c_ptr);
+    assign_and_advance_blasfeo_dmat_structs(N, &mem->sigl_rule, &c_ptr);
+    assign_and_advance_blasfeo_dmat_structs(N, &mem->sigu_rule, &c_ptr);
+    assign_and_advance_blasfeo_dmat_structs(N, &mem->xil_rule, &c_ptr);
+    assign_and_advance_blasfeo_dmat_structs(N, &mem->xiu_rule, &c_ptr);
 
     // blasfeo_mem align
     align_char_to(64, &c_ptr);
@@ -510,6 +528,14 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
         assign_and_advance_blasfeo_dvec_mem(nu[i], mem->zu_trial+i, &c_ptr);
         assign_and_advance_blasfeo_dvec_mem(ni[i], mem->zsl_trial+i, &c_ptr);
         assign_and_advance_blasfeo_dvec_mem(ni[i], mem->zsu_trial+i, &c_ptr);
+        assign_and_advance_blasfeo_dvec_mem(ni[i], mem->lsl+i, &c_ptr);
+        assign_and_advance_blasfeo_dvec_mem(ni[i], mem->lsu+i, &c_ptr);
+        assign_and_advance_blasfeo_dvec_mem(ni[i], mem->masksl+i, &c_ptr);
+        assign_and_advance_blasfeo_dvec_mem(ni[i], mem->masksu+i, &c_ptr);
+        assign_and_advance_blasfeo_dvec_mem(ni[i], mem->xil+i, &c_ptr);
+        assign_and_advance_blasfeo_dvec_mem(ni[i], mem->xiu+i, &c_ptr);
+        assign_and_advance_blasfeo_dvec_mem(ni[i], mem->xil_trial+i, &c_ptr);
+        assign_and_advance_blasfeo_dvec_mem(ni[i], mem->xiu_trial+i, &c_ptr);
 
         assign_and_advance_blasfeo_dmat_mem(nu[i], nx[i]+1, mem->alpha_beta+i, &c_ptr);
         assign_and_advance_blasfeo_dmat_mem(ni[i], nx[i]+1, mem->alphas_betas+i, &c_ptr);
@@ -519,6 +545,10 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
         assign_and_advance_blasfeo_dmat_mem(nu[i], nx[i]+1, mem->chiu_zetau+i, &c_ptr);
         assign_and_advance_blasfeo_dmat_mem(ni[i], nx[i]+1, mem->chisl_zetasl+i, &c_ptr);
         assign_and_advance_blasfeo_dmat_mem(ni[i], nx[i]+1, mem->chisu_zetasu+i, &c_ptr);
+        assign_and_advance_blasfeo_dmat_mem(ni[i], nx[i]+1, mem->sigl_rule+i, &c_ptr);
+        assign_and_advance_blasfeo_dmat_mem(ni[i], nx[i]+1, mem->sigu_rule+i, &c_ptr);
+        assign_and_advance_blasfeo_dmat_mem(ni[i], nx[i]+1, mem->xil_rule+i, &c_ptr);
+        assign_and_advance_blasfeo_dmat_mem(ni[i], nx[i]+1, mem->xiu_rule+i, &c_ptr);
     }
     for (int i = 0; i <= N; i++)
         assign_and_advance_blasfeo_dvec_mem(nx[i], mem->costate+i, &c_ptr);
@@ -528,6 +558,8 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
         blasfeo_dvecse(ni[i], 0.0, mem->s+i, 0);
         blasfeo_dvecse(ni[i], 0.0, mem->phi+i, 0);
         blasfeo_dvecse(ni[i], 0.0, mem->nu+i, 0);
+        blasfeo_dvecse(ni[i], 0.0, mem->xil+i, 0);
+        blasfeo_dvecse(ni[i], 0.0, mem->xiu+i, 0);
         blasfeo_dvecse(nu[i], 0.0, mem->zl+i, 0);
         blasfeo_dvecse(nu[i], 0.0, mem->zu+i, 0);
         blasfeo_dvecse(ni[i], 0.0, mem->zsl+i, 0);
@@ -584,6 +616,7 @@ acados_size_t ocp_nlp_filterddp_workspace_calculate_size(void *config_, void *di
     size += blasfeo_memsize_dmat(nx_max, nx_max);           // xx_tmp
     size += 6*blasfeo_memsize_dvec(nu_max);                 // ul_dist ... SigmaU
     size += 7*blasfeo_memsize_dvec(ni_max);                 // sl_dist ... Sigmas
+    size += 16*blasfeo_memsize_dvec(ni_max);                // inv_el ... wsu
     size += 4*blasfeo_memsize_dmat(nu_max, nxp);            // rhs_u, rhs_u_solve, sol_tmp, tmp_u
     size += 3*blasfeo_memsize_dmat(ni_max, nxp);            // rhs_s, rhs_g, rhs_sg
     size += 2*blasfeo_memsize_dmat(nu_max, ni_max);         // guT, guT_S
@@ -676,6 +709,22 @@ static void ocp_nlp_filterddp_cast_workspace(ocp_nlp_config *config, ocp_nlp_dim
     assign_and_advance_blasfeo_dvec_mem(ni_max, &work->SigmasL, &c_ptr);
     assign_and_advance_blasfeo_dvec_mem(ni_max, &work->SigmasU, &c_ptr);
     assign_and_advance_blasfeo_dvec_mem(ni_max, &work->Sigmas, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->inv_el, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->inv_eu, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->Xil, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->Xiu, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->Qsigl, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->Qsigu, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->rsigl, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->rsigu, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->inv_Dl, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->inv_Du, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->ksigl, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->ksigu, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->csigl, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->csigu, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->wsl, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(ni_max, &work->wsu, &c_ptr);
 
     assign_and_advance_blasfeo_dmat_mem(nu_max, nxp, &work->rhs_u, &c_ptr);
     assign_and_advance_blasfeo_dmat_mem(ni_max, nxp, &work->rhs_s, &c_ptr);
@@ -873,6 +922,26 @@ static int filterddp_filter_blocks(ocp_nlp_filterddp_memory *mem, double theta, 
 
 
 
+// constraint rows of a stage in the layout [bu; bx; g; h] of the bounds d, the masks and the multipliers
+// lam, whose upper sides start at this offset and whose slack bounds follow at twice this offset
+static int filterddp_nrows(ocp_nlp_constraints_bgh_dims *cdims)
+{
+    return cdims->nb + cdims->ng + cdims->nh;
+}
+
+
+
+// row of an affine update rule evaluated at the state deviation xi
+static double filterddp_rule_value(int nx, struct blasfeo_dmat *K, int row, struct blasfeo_dvec *xi, double gamma)
+{
+    double value = gamma*EL(K, row, 0);
+    for (int k = 0; k < nx; k++)
+        value += EL(K, row, k+1)*VEL(xi, k);
+    return value;
+}
+
+
+
 /*
  * constraint evaluation of stage i at the point currently aliased as ux in the constraints module:
  * constr_eval_no_bounds = [ux[idxb]; DCt' ux; h(x,u)], gathered into h (equality rows) and g
@@ -965,13 +1034,13 @@ static void filterddp_gather_jacobians(ocp_nlp_config *config, ocp_nlp_dims *dim
 static void filterddp_set_lam(ocp_nlp_dims *dims, ocp_nlp_out *out, ocp_nlp_filterddp_memory *mem, int i,
         struct blasfeo_dvec *phi, struct blasfeo_dvec *nu_)
 {
-    int ni = dims->ni[i];
-    blasfeo_dvecse(2*ni, 0.0, out->lam+i, 0);
+    int ni0 = filterddp_nrows(dims->constraints[i]);
+    blasfeo_dvecse(2*dims->ni[i], 0.0, out->lam+i, 0);
     for (int j = 0; j < mem->nh[i]; j++)
     {
         double m = VEL(phi, j);
         if (m >= 0.0)
-            VEL(out->lam+i, ni+mem->idxh[i][j]) = m;
+            VEL(out->lam+i, ni0+mem->idxh[i][j]) = m;
         else
             VEL(out->lam+i, mem->idxh[i][j]) = -m;
     }
@@ -979,7 +1048,7 @@ static void filterddp_set_lam(ocp_nlp_dims *dims, ocp_nlp_out *out, ocp_nlp_filt
     {
         double m = VEL(nu_, j);
         if (m >= 0.0)
-            VEL(out->lam+i, ni+mem->idxg[i][j]) = m;
+            VEL(out->lam+i, ni0+mem->idxg[i][j]) = m;
         else
             VEL(out->lam+i, mem->idxg[i][j]) = -m;
     }
@@ -1004,9 +1073,10 @@ static void filterddp_set_pi(ocp_nlp_dims *dims, ocp_nlp_out *out, int i, struct
 
 
 /*
- * Classify the constraint rows of each stage: bounds on u are handled as control limits, the initial
+ * Classify the constraint rows of each stage: hard bounds on u are handled as control limits, the initial
  * state bound fixes x_0, all other rows are equalities if both sides coincide and inequalities with a
- * slack otherwise. Bounds are user data that may change between solves, so this runs at every solve.
+ * slack otherwise. Soft rows are inequalities whose slack bounds are relaxed by the soft constraint
+ * slacks, one per row. Bounds are user data that may change between solves, so this runs at every solve.
  */
 static int filterddp_classify_constraints(ocp_nlp_dims *dims, ocp_nlp_in *nlp_in, ocp_nlp_filterddp_memory *mem)
 {
@@ -1015,20 +1085,47 @@ static int filterddp_classify_constraints(ocp_nlp_dims *dims, ocp_nlp_in *nlp_in
     {
         ocp_nlp_constraints_bgh_model *model = nlp_in->constraints[i];
         ocp_nlp_constraints_bgh_dims *cdims = dims->constraints[i];
-        int ni = dims->ni[i];
+        int ni0 = filterddp_nrows(cdims);
         int nbu = cdims->nbu;
         int nbx = cdims->nbx;
+        int *row_slack = mem->idxs_row[i];
+        for (int j = 0; j < ni0; j++)
+            row_slack[j] = -1;
+        if (model->use_idxs_rev)
+        {
+            for (int j = 0; j < ni0; j++)
+                row_slack[j] = model->idxs_rev[j];
+        }
+        else
+        {
+            for (int j = 0; j < cdims->ns; j++)
+                row_slack[model->idxs[j]] = j;
+        }
+        for (int j = 0; j < ni0; j++)
+        {
+            for (int k = j+1; k < ni0; k++)
+            {
+                if (row_slack[j] >= 0 && row_slack[j] == row_slack[k])
+                {
+                    printf("ocp_nlp_filterddp: stage %d relaxes constraint rows %d and %d with the same slack, which is not supported.\n", i, j, k);
+                    return ACADOS_QP_FAILURE;
+                }
+            }
+        }
         mem->nh[i] = 0;
         mem->ng[i] = 0;
-        for (int j = nbu; j < ni; j++)
+        for (int j = 0; j < ni0; j++)
         {
-            if (i == 0 && j < nbu+nbx)
+            int soft = row_slack[j] >= 0;
+            if (j < nbu && !soft)
+                continue;
+            if (i == 0 && j >= nbu && j < nbu+nbx)
                 continue;
             int has_lower = VEL(nlp_in->dmask+i, j) != 0.0;
-            int has_upper = VEL(nlp_in->dmask+i, ni+j) != 0.0;
+            int has_upper = VEL(nlp_in->dmask+i, ni0+j) != 0.0;
             double lower = VEL(&model->d, j);
-            double upper = VEL(&model->d, ni+j);
-            if (has_lower && has_upper && lower == upper)
+            double upper = VEL(&model->d, ni0+j);
+            if (!soft && has_lower && has_upper && lower == upper)
             {
                 mem->idxh[i][mem->nh[i]] = j;
                 mem->nh[i]++;
@@ -1036,6 +1133,7 @@ static int filterddp_classify_constraints(ocp_nlp_dims *dims, ocp_nlp_in *nlp_in
             else if (has_lower || has_upper)
             {
                 mem->idxg[i][mem->ng[i]] = j;
+                mem->idxs_g[i][mem->ng[i]] = row_slack[j];
                 mem->ng[i]++;
             }
         }
@@ -1060,6 +1158,24 @@ static void filterddp_evaluate_constraints_at(ocp_nlp_config *config, ocp_nlp_di
     config->constraints[i]->memory_set(config->constraints[i], dims->constraints[i], nlp_mem->constraints[i], "ux_ptr", out->ux+i);
     config->constraints[i]->compute_fun(config->constraints[i], dims->constraints[i],
             in->constraints[i], nlp_opts->constraints[i], nlp_mem->constraints[i], nlp_work->constraints[i]);
+}
+
+
+
+// value of constraint row idx of stage i from the last compute_fun of the constraints module at ux, which
+// leaves fun = [d_lo - c - sig_lo; c - d_up - sig_up] masked with the soft constraint slacks sig of ux
+static double filterddp_row_value(ocp_nlp_dims *dims, ocp_nlp_in *in, ocp_nlp_memory *nlp_mem,
+        ocp_nlp_filterddp_memory *mem, struct blasfeo_dvec *ux, int i, int idx)
+{
+    ocp_nlp_constraints_bgh_memory *constr_mem = nlp_mem->constraints[i];
+    ocp_nlp_constraints_bgh_model *model = in->constraints[i];
+    ocp_nlp_constraints_bgh_dims *cdims = dims->constraints[i];
+    int ni0 = filterddp_nrows(cdims);
+    int nux = dims->nu[i] + dims->nx[i];
+    int is = mem->idxs_row[i][idx];
+    if (VEL(in->dmask+i, idx) != 0.0)
+        return VEL(&model->d, idx) - VEL(&constr_mem->fun, idx) - (is >= 0 ? VEL(ux, nux+is) : 0.0);
+    return VEL(&constr_mem->fun, ni0+idx) + VEL(&model->d, ni0+idx) + (is >= 0 ? VEL(ux, nux+cdims->ns+is) : 0.0);
 }
 
 
@@ -1131,30 +1247,37 @@ static void filterddp_initialize_trajectory(ocp_nlp_config *config, ocp_nlp_dims
                     VEL(mem->maskul+i, j) != 0.0, VEL(mem->maskuu+i, j) != 0.0, opts->kappa_1, opts->kappa_2);
         }
 
-        // slacks from constraint values
+        // slacks from constraint values; soft rows absorb their violation with the soft constraint slacks,
+        // kept interior of their bounds, so that s starts interior of the relaxed bounds
         if (mem->ng[i] > 0)
         {
             filterddp_evaluate_constraints_at(config, dims, in, nlp_opts, nlp_mem, nlp_work, out, i);
             ocp_nlp_constraints_bgh_memory *constr_mem = nlp_mem->constraints[i];
             ocp_nlp_constraints_bgh_dims *cdims = dims->constraints[i];
-            // compute_fun leaves function values in tmp_ni of the constraints workspace; recompute from ux and DCt directly
+            int nux = nu[i] + nx[i];
             for (int j = 0; j < mem->ng[i]; j++)
             {
                 int idx = mem->idxg[i][j];
-                double value;
-                if (idx < cdims->nb)
+                int is = mem->idxs_g[i][j];
+                double value = idx < cdims->nb ? VEL(out->ux+i, constr_mem->idxb[idx])
+                        : filterddp_row_value(dims, in, nlp_mem, mem, out->ux+i, i, idx);
+                double gl = VEL(mem->gl+i, j);
+                double gu = VEL(mem->gu+i, j);
+                if (VEL(mem->masksl+i, j) != 0.0)
                 {
-                    value = VEL(out->ux+i, constr_mem->idxb[idx]);
+                    double sig = filterddp_interior(filterddp_max(VEL(mem->lsl+i, j), gl-value), VEL(mem->lsl+i, j), 0.0, 1, 0,
+                            opts->kappa_1, opts->kappa_2);
+                    VEL(out->ux+i, nux+is) = sig;
+                    gl -= sig;
                 }
-                else
+                if (VEL(mem->masksu+i, j) != 0.0)
                 {
-                    // fun = d_lower - eval, so eval = d_lower - fun for unmasked lower bounds; use the upper row otherwise
-                    if (VEL(in->dmask+i, idx) != 0.0)
-                        value = VEL(&((ocp_nlp_constraints_bgh_model *) in->constraints[i])->d, idx) - VEL(&constr_mem->fun, idx);
-                    else
-                        value = VEL(&constr_mem->fun, dims->ni[i]+idx) + VEL(&((ocp_nlp_constraints_bgh_model *) in->constraints[i])->d, dims->ni[i]+idx);
+                    double sig = filterddp_interior(filterddp_max(VEL(mem->lsu+i, j), value-gu), VEL(mem->lsu+i, j), 0.0, 1, 0,
+                            opts->kappa_1, opts->kappa_2);
+                    VEL(out->ux+i, nux+cdims->ns+is) = sig;
+                    gu += sig;
                 }
-                VEL(mem->s+i, j) = filterddp_interior(value, VEL(mem->gl+i, j), VEL(mem->gu+i, j),
+                VEL(mem->s+i, j) = filterddp_interior(value, gl, gu,
                         VEL(mem->maskgl+i, j) != 0.0, VEL(mem->maskgu+i, j) != 0.0, opts->kappa_1, opts->kappa_2);
             }
         }
@@ -1170,6 +1293,8 @@ static void filterddp_initialize_trajectory(ocp_nlp_config *config, ocp_nlp_dims
         {
             VEL(mem->zsl+i, j) = opts->ineq_dual_init*VEL(mem->maskgl+i, j);
             VEL(mem->zsu+i, j) = opts->ineq_dual_init*VEL(mem->maskgu+i, j);
+            VEL(mem->xil+i, j) = opts->ineq_dual_init*VEL(mem->masksl+i, j);
+            VEL(mem->xiu+i, j) = opts->ineq_dual_init*VEL(mem->masksu+i, j);
         }
 
         // rollout
@@ -1279,13 +1404,20 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
             struct blasfeo_dvec *zu = mem->zu+i;
             struct blasfeo_dvec *zsl = mem->zsl+i;
             struct blasfeo_dvec *zsu = mem->zsu+i;
+            struct blasfeo_dvec *xil = mem->xil+i;
+            struct blasfeo_dvec *xiu = mem->xiu+i;
+            struct blasfeo_dvec *masksl = mem->masksl+i;
+            struct blasfeo_dvec *masksu = mem->masksu+i;
+            int nux = nui+nxi;
+            int nsi = ((ocp_nlp_constraints_bgh_dims *) dims->constraints[i])->ns;
             struct blasfeo_dmat *Hs = ngi > 0 ? &work->Hsolve : &work->H;
             struct blasfeo_dmat *Rs = ngi > 0 ? &work->rhs_u_solve : &work->rhs_u;
 
             for (int j = 0; j < nui; j++)
                 ni_bounds += (VEL(mem->maskul+i, j) != 0.0) + (VEL(mem->maskuu+i, j) != 0.0);
             for (int j = 0; j < ngi; j++)
-                ni_bounds += (VEL(mem->maskgl+i, j) != 0.0) + (VEL(mem->maskgu+i, j) != 0.0);
+                ni_bounds += (VEL(mem->maskgl+i, j) != 0.0) + (VEL(mem->maskgu+i, j) != 0.0)
+                        + (VEL(masksl, j) != 0.0) + (VEL(masksu, j) != 0.0);
 
             // linearize stage i with the current dynamics multiplier
             filterddp_set_pi(dims, out, i, unconstrained ? &work->Vx : &work->lambda);
@@ -1366,8 +1498,12 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
                 double log_u = 0.0;
                 for (int j = 0; j < ngi; j++)
                 {
-                    VEL(&work->sl_dist, j) = VEL(s, j) - VEL(gl, j);
-                    VEL(&work->su_dist, j) = VEL(gu_, j) - VEL(s, j);
+                    // the soft constraint slacks relax the bounds of s
+                    int is = mem->idxs_g[i][j];
+                    double sigl = VEL(masksl, j) != 0.0 ? VEL(out->ux+i, nux+is) : 0.0;
+                    double sigu = VEL(masksu, j) != 0.0 ? VEL(out->ux+i, nux+nsi+is) : 0.0;
+                    VEL(&work->sl_dist, j) = VEL(s, j) - VEL(gl, j) + sigl;
+                    VEL(&work->su_dist, j) = VEL(gu_, j) - VEL(s, j) + sigu;
                     if (VEL(mem->maskgl+i, j) != 0.0)
                     {
                         log_l += log(VEL(&work->sl_dist, j));
@@ -1396,12 +1532,90 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
                 mem->barrier_lagrangian_curr -= mu*(log_l + log_u);
             }
 
+            // soft rows: barrier terms of the slack bounds sig >= ls and elimination of the slacks. With
+            // el = sigl - lsl, Xil = xil/el, SigmasL = zsl/dl and Dl = Zl + SigmasL + Xil the Newton step of the
+            // slack is d sigl = -(Qsigl + SigmasL ds)/Dl, so SigmasL (Zl + Xil)/Dl replaces SigmasL in the
+            // elimination of s and Qs gains -SigmasL Qsigl/Dl. The upper side is the same with s - gu in place of
+            // gl - s. The slack cost is part of the stage cost through the slacks in ux.
+            if (ngi > 0)
+            {
+                double log_l = 0.0;
+                double log_u = 0.0;
+                for (int j = 0; j < ngi; j++)
+                {
+                    int is = mem->idxs_g[i][j];
+                    VEL(&work->inv_el, j) = 0.0;
+                    VEL(&work->inv_eu, j) = 0.0;
+                    VEL(&work->Xil, j) = 0.0;
+                    VEL(&work->Xiu, j) = 0.0;
+                    VEL(&work->Qsigl, j) = 0.0;
+                    VEL(&work->Qsigu, j) = 0.0;
+                    VEL(&work->rsigl, j) = 0.0;
+                    VEL(&work->rsigu, j) = 0.0;
+                    VEL(&work->inv_Dl, j) = 0.0;
+                    VEL(&work->inv_Du, j) = 0.0;
+                    VEL(&work->ksigl, j) = 0.0;
+                    VEL(&work->ksigu, j) = 0.0;
+                    VEL(&work->csigl, j) = 0.0;
+                    VEL(&work->csigu, j) = 0.0;
+                    VEL(&work->wsl, j) = 1.0;
+                    VEL(&work->wsu, j) = 1.0;
+                    if (VEL(masksl, j) != 0.0)
+                    {
+                        double el = VEL(out->ux+i, nux+is) - VEL(mem->lsl+i, j);
+                        double cs = el*VEL(xil, j);
+                        log_l += log(el);
+                        mem->cs_inf_0 = filterddp_max(mem->cs_inf_0, fabs(cs));
+                        mem->cs_inf_mu = filterddp_max(mem->cs_inf_mu, fabs(cs-mu));
+                        double inv_el = 1.0/el;
+                        double Xi = VEL(xil, j)*inv_el;
+                        double Sigma = VEL(&work->inv_sl, j)*VEL(zsl, j);
+                        double Z = VEL(qp_in->Z+i, is);
+                        double grad = VEL(cost_grad, nux+is);
+                        double inv_D = 1.0/(Z + Sigma + Xi);
+                        VEL(&work->inv_el, j) = inv_el;
+                        VEL(&work->Xil, j) = Xi;
+                        VEL(&work->Qsigl, j) = grad - mu*VEL(&work->inv_sl, j) - mu*inv_el;
+                        VEL(&work->rsigl, j) = grad - VEL(zsl, j) - VEL(xil, j);
+                        VEL(&work->inv_Dl, j) = inv_D;
+                        VEL(&work->ksigl, j) = Sigma*inv_D;
+                        VEL(&work->csigl, j) = Sigma*inv_D*VEL(&work->Qsigl, j);
+                        VEL(&work->wsl, j) = (Z + Xi)*inv_D;
+                    }
+                    if (VEL(masksu, j) != 0.0)
+                    {
+                        double eu = VEL(out->ux+i, nux+nsi+is) - VEL(mem->lsu+i, j);
+                        double cs = eu*VEL(xiu, j);
+                        log_u += log(eu);
+                        mem->cs_inf_0 = filterddp_max(mem->cs_inf_0, fabs(cs));
+                        mem->cs_inf_mu = filterddp_max(mem->cs_inf_mu, fabs(cs-mu));
+                        double inv_eu = 1.0/eu;
+                        double Xi = VEL(xiu, j)*inv_eu;
+                        double Sigma = VEL(&work->inv_su, j)*VEL(zsu, j);
+                        double Z = VEL(qp_in->Z+i, nsi+is);
+                        double grad = VEL(cost_grad, nux+nsi+is);
+                        double inv_D = 1.0/(Z + Sigma + Xi);
+                        VEL(&work->inv_eu, j) = inv_eu;
+                        VEL(&work->Xiu, j) = Xi;
+                        VEL(&work->Qsigu, j) = grad - mu*VEL(&work->inv_su, j) - mu*inv_eu;
+                        VEL(&work->rsigu, j) = grad - VEL(zsu, j) - VEL(xiu, j);
+                        VEL(&work->inv_Du, j) = inv_D;
+                        VEL(&work->ksigu, j) = Sigma*inv_D;
+                        VEL(&work->csigu, j) = Sigma*inv_D*VEL(&work->Qsigu, j);
+                        VEL(&work->wsu, j) = (Z + Xi)*inv_D;
+                    }
+                }
+                mem->barrier_lagrangian_curr -= mu*(log_l + log_u);
+            }
+
             // Qu = lu + fu' Vx + mu (inv_uu - inv_ul)
             blasfeo_dgemv_t(nx[i+1], nui, 1.0, &work->fu, 0, 0, &work->Vx, 0, 1.0, &work->lu, 0, &work->Qu, 0);
             for (int j = 0; j < nui; j++)
                 VEL(&work->Qu, j) += mu*(VEL(&work->inv_uu, j) - VEL(&work->inv_ul, j));
+            // Qs = -nu + mu (inv_su - inv_sl), with the soft constraint slacks eliminated
             for (int j = 0; j < ngi; j++)
-                VEL(&work->Qs, j) = -VEL(nu_, j) + mu*(VEL(&work->inv_su, j) - VEL(&work->inv_sl, j));
+                VEL(&work->Qs, j) = -VEL(nu_, j) + mu*(VEL(&work->inv_su, j) - VEL(&work->inv_sl, j))
+                        - VEL(&work->csigl, j) + VEL(&work->csigu, j);
 
             // Lagrangian Hessian blocks from the lower triangle of RSQrq, u first
             blasfeo_dgecp(nxi, nxi, qp_in->RSQrq+i, nui, nui, &work->C, 0, 0);
@@ -1427,8 +1641,8 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
             }
             for (int j = 0; j < ngi; j++)
             {
-                VEL(&work->SigmasL, j) = VEL(&work->inv_sl, j)*VEL(zsl, j);
-                VEL(&work->SigmasU, j) = VEL(&work->inv_su, j)*VEL(zsu, j);
+                VEL(&work->SigmasL, j) = VEL(&work->inv_sl, j)*VEL(zsl, j)*VEL(&work->wsl, j);
+                VEL(&work->SigmasU, j) = VEL(&work->inv_su, j)*VEL(zsu, j)*VEL(&work->wsu, j);
                 VEL(&work->Sigmas, j) = VEL(&work->SigmasL, j) + VEL(&work->SigmasU, j);
             }
 
@@ -1584,8 +1798,29 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
                     EL(mem->chisl_zetasl+i, j, k) = -EL(ab_s, j, k)*VEL(&work->SigmasL, j);
                     EL(mem->chisu_zetasu+i, j, k) = EL(ab_s, j, k)*VEL(&work->SigmasU, j);
                 }
-                EL(mem->chisl_zetasl+i, j, 0) = VEL(&work->inv_sl, j)*mu - VEL(zsl, j) - VEL(&work->SigmasL, j)*EL(ab_s, j, 0);
-                EL(mem->chisu_zetasu+i, j, 0) = VEL(&work->inv_su, j)*mu - VEL(zsu, j) + VEL(&work->SigmasU, j)*EL(ab_s, j, 0);
+                EL(mem->chisl_zetasl+i, j, 0) = VEL(&work->inv_sl, j)*mu - VEL(zsl, j) + VEL(&work->csigl, j) - VEL(&work->SigmasL, j)*EL(ab_s, j, 0);
+                EL(mem->chisu_zetasu+i, j, 0) = VEL(&work->inv_su, j)*mu - VEL(zsu, j) + VEL(&work->csigu, j) + VEL(&work->SigmasU, j)*EL(ab_s, j, 0);
+                // soft constraint slacks and their bound multipliers: d sig = -(Qsig + Sigma ds)/D, d xi = mu/e - xi - Xi d sig
+                if (VEL(masksl, j) != 0.0)
+                {
+                    for (int k = 0; k < nxp; k++)
+                    {
+                        EL(mem->sigl_rule+i, j, k) = -VEL(&work->ksigl, j)*EL(ab_s, j, k);
+                        EL(mem->xil_rule+i, j, k) = -VEL(&work->Xil, j)*EL(mem->sigl_rule+i, j, k);
+                    }
+                    EL(mem->sigl_rule+i, j, 0) -= VEL(&work->Qsigl, j)*VEL(&work->inv_Dl, j);
+                    EL(mem->xil_rule+i, j, 0) = mu*VEL(&work->inv_el, j) - VEL(xil, j) - VEL(&work->Xil, j)*EL(mem->sigl_rule+i, j, 0);
+                }
+                if (VEL(masksu, j) != 0.0)
+                {
+                    for (int k = 0; k < nxp; k++)
+                    {
+                        EL(mem->sigu_rule+i, j, k) = VEL(&work->ksigu, j)*EL(ab_s, j, k);
+                        EL(mem->xiu_rule+i, j, k) = -VEL(&work->Xiu, j)*EL(mem->sigu_rule+i, j, k);
+                    }
+                    EL(mem->sigu_rule+i, j, 0) -= VEL(&work->Qsigu, j)*VEL(&work->inv_Du, j);
+                    EL(mem->xiu_rule+i, j, 0) = mu*VEL(&work->inv_eu, j) - VEL(xiu, j) - VEL(&work->Xiu, j)*EL(mem->sigu_rule+i, j, 0);
+                }
             }
 
             // stationarity residuals with the costate (Lu_costate) and with the primal-dual value gradient
@@ -1599,9 +1834,13 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
                 blasfeo_dgemv_t(ngi, nui, 1.0, &work->gu, 0, 0, nu_, 0, 1.0, &work->Lu, 0, &work->Lu, 0);
                 for (int j = 0; j < ngi; j++)
                     VEL(&work->Ls, j) = -VEL(nu_, j) - VEL(zsl, j) + VEL(zsu, j);
-                double Ls_norm = filterddp_norm_inf(ngi, &work->Ls, 0);
+                double Ls_norm = filterddp_max(filterddp_norm_inf(ngi, &work->Ls, 0),
+                        filterddp_max(filterddp_norm_inf(ngi, &work->rsigl, 0), filterddp_norm_inf(ngi, &work->rsigu, 0)));
                 dual_inf_costate = filterddp_max(dual_inf_costate, Ls_norm);
                 dual_inf_value = filterddp_max(dual_inf_value, Ls_norm);
+                // the slack residuals enter the adjoint residual of the value gradient through the slack feedback
+                for (int j = 0; j < ngi; j++)
+                    VEL(&work->Ls, j) += -VEL(&work->ksigl, j)*VEL(&work->rsigl, j) + VEL(&work->ksigu, j)*VEL(&work->rsigu, j);
             }
             blasfeo_dgemv_t(nx[i+1], nui, 1.0, &work->fu, 0, 0, &work->lambda, 0, 1.0, &work->Lu, 0, &work->Lu_costate, 0);
             blasfeo_dgemv_t(nx[i+1], nui, 1.0, &work->fu, 0, 0, &work->Vd, 0, 1.0, &work->Lu, 0, &work->Lu, 0);
@@ -1610,7 +1849,7 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
             for (int j = 0; j < nui; j++)
                 z_norm += VEL(zl, j) + VEL(zu, j);
             for (int j = 0; j < ngi; j++)
-                z_norm += VEL(zsl, j) + VEL(zsu, j);
+                z_norm += VEL(zsl, j) + VEL(zsu, j) + VEL(xil, j) + VEL(xiu, j);
             for (int j = 0; j < nhi; j++)
                 phi_norm += fabs(VEL(phi, j));
             for (int j = 0; j < ngi; j++)
@@ -1681,7 +1920,9 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
             for (int j = 0; j < nhi; j++)
                 mem->expected_change_L += VEL(&work->h, j)*EL(mem->psih_omegah+i, j, 0);
             for (int j = 0; j < ngi; j++)
-                mem->expected_change_L += VEL(&work->Qs, j)*EL(mem->alphas_betas+i, j, 0) + VEL(&work->q, j)*EL(mem->psig_omegag+i, j, 0);
+                mem->expected_change_L += VEL(&work->Qs, j)*EL(mem->alphas_betas+i, j, 0) + VEL(&work->q, j)*EL(mem->psig_omegag+i, j, 0)
+                        - VEL(&work->Qsigl, j)*VEL(&work->Qsigl, j)*VEL(&work->inv_Dl, j)
+                        - VEL(&work->Qsigu, j)*VEL(&work->Qsigu, j)*VEL(&work->inv_Du, j);
         }
         nlp_timings->time_lin += acados_toc(&timer);
 
@@ -1746,10 +1987,13 @@ static void filterddp_rollout(ocp_nlp_config *config, ocp_nlp_dims *dims, ocp_nl
         int nui = nu[i];
         int nhi = mem->nh[i];
         int ngi = mem->ng[i];
+        int nux = nui+nxi;
+        int nsi = ((ocp_nlp_constraints_bgh_dims *) dims->constraints[i])->ns;
 
         for (int j = 0; j < nxi; j++)
             VEL(&work->xi, j) = VEL(trial->ux+i, nui+j) - VEL(out->ux+i, nui+j);
 
+        blasfeo_dveccp(2*nsi, out->ux+i, nux, trial->ux+i, nux);
         filterddp_apply_rule(nui, nxi, out->ux+i, 0, step_size, mem->alpha_beta+i, &work->xi, trial->ux+i, 0);
         filterddp_apply_rule(nhi, nxi, mem->phi+i, 0, step_size, mem->psih_omegah+i, &work->xi, mem->phi_trial+i, 0);
         filterddp_apply_rule(nui, nxi, mem->zl+i, 0, step_size, mem->chil_zetal+i, &work->xi, mem->zl_trial+i, 0);
@@ -1760,9 +2004,23 @@ static void filterddp_rollout(ocp_nlp_config *config, ocp_nlp_dims *dims, ocp_nl
             filterddp_apply_rule(ngi, nxi, mem->nu+i, 0, step_size, mem->psig_omegag+i, &work->xi, mem->nu_trial+i, 0);
             filterddp_apply_rule(ngi, nxi, mem->zsl+i, 0, step_size, mem->chisl_zetasl+i, &work->xi, mem->zsl_trial+i, 0);
             filterddp_apply_rule(ngi, nxi, mem->zsu+i, 0, step_size, mem->chisu_zetasu+i, &work->xi, mem->zsu_trial+i, 0);
+            for (int j = 0; j < ngi; j++)
+            {
+                int is = mem->idxs_g[i][j];
+                if (VEL(mem->masksl+i, j) != 0.0)
+                {
+                    VEL(trial->ux+i, nux+is) = VEL(out->ux+i, nux+is) + filterddp_rule_value(nxi, mem->sigl_rule+i, j, &work->xi, step_size);
+                    VEL(mem->xil_trial+i, j) = VEL(mem->xil+i, j) + filterddp_rule_value(nxi, mem->xil_rule+i, j, &work->xi, step_size);
+                }
+                if (VEL(mem->masksu+i, j) != 0.0)
+                {
+                    VEL(trial->ux+i, nux+nsi+is) = VEL(out->ux+i, nux+nsi+is) + filterddp_rule_value(nxi, mem->sigu_rule+i, j, &work->xi, step_size);
+                    VEL(mem->xiu_trial+i, j) = VEL(mem->xiu+i, j) + filterddp_rule_value(nxi, mem->xiu_rule+i, j, &work->xi, step_size);
+                }
+            }
         }
 
-        if (!filterddp_all_finite(nui+nxi, trial->ux+i, 0) || !filterddp_all_finite(ngi, mem->s_trial+i, 0))
+        if (!filterddp_all_finite(nux+2*nsi, trial->ux+i, 0) || !filterddp_all_finite(ngi, mem->s_trial+i, 0))
         {
             mem->status_internal = FILTERDDP_STATUS_FORWARD_FAILED;
             return;
@@ -1771,26 +2029,10 @@ static void filterddp_rollout(ocp_nlp_config *config, ocp_nlp_dims *dims, ocp_nl
         if (nhi > 0 || ngi > 0)
         {
             filterddp_evaluate_constraints_at(config, dims, in, nlp_opts, nlp_mem, nlp_work, trial, i);
-            ocp_nlp_constraints_bgh_memory *constr_mem = nlp_mem->constraints[i];
-            ocp_nlp_constraints_bgh_model *model = in->constraints[i];
-            int ni = dims->ni[i];
-            // recover the raw evaluation from fun = [d_lo - eval; eval - d_up] masked
             for (int j = 0; j < nhi; j++)
-            {
-                int idx = mem->idxh[i][j];
-                double value = VEL(&model->d, idx) - VEL(&constr_mem->fun, idx);
-                VEL(&work->h, j) = value;
-            }
+                VEL(&work->h, j) = filterddp_row_value(dims, in, nlp_mem, mem, trial->ux+i, i, mem->idxh[i][j]);
             for (int j = 0; j < ngi; j++)
-            {
-                int idx = mem->idxg[i][j];
-                double value;
-                if (VEL(in->dmask+i, idx) != 0.0)
-                    value = VEL(&model->d, idx) - VEL(&constr_mem->fun, idx);
-                else
-                    value = VEL(&constr_mem->fun, ni+idx) + VEL(&model->d, ni+idx);
-                VEL(&work->g, j) = value;
-            }
+                VEL(&work->g, j) = filterddp_row_value(dims, in, nlp_mem, mem, trial->ux+i, i, mem->idxg[i][j]);
             if (nhi > 0)
             {
                 if (!filterddp_all_finite(nhi, &work->h, 0))
@@ -1856,12 +2098,21 @@ static void filterddp_rollout(ocp_nlp_config *config, ocp_nlp_dims *dims, ocp_nl
         {
             for (int j = 0; j < ngi; j++)
             {
-                double sl = VEL(mem->s_trial+i, j) - VEL(mem->gl+i, j);
-                double su = VEL(mem->gu+i, j) - VEL(mem->s_trial+i, j);
-                double sl_bar = VEL(mem->s+i, j) - VEL(mem->gl+i, j);
-                double su_bar = VEL(mem->gu+i, j) - VEL(mem->s+i, j);
+                int is = mem->idxs_g[i][j];
+                int softl = VEL(mem->masksl+i, j) != 0.0;
+                int softu = VEL(mem->masksu+i, j) != 0.0;
+                double sl = VEL(mem->s_trial+i, j) - VEL(mem->gl+i, j) + (softl ? VEL(trial->ux+i, nux+is) : 0.0);
+                double su = VEL(mem->gu+i, j) - VEL(mem->s_trial+i, j) + (softu ? VEL(trial->ux+i, nux+nsi+is) : 0.0);
+                double sl_bar = VEL(mem->s+i, j) - VEL(mem->gl+i, j) + (softl ? VEL(out->ux+i, nux+is) : 0.0);
+                double su_bar = VEL(mem->gu+i, j) - VEL(mem->s+i, j) + (softu ? VEL(out->ux+i, nux+nsi+is) : 0.0);
                 if ((VEL(mem->maskgl+i, j) != 0.0 && sl_bar*one_minus_tau > sl) ||
                     (VEL(mem->maskgu+i, j) != 0.0 && su_bar*one_minus_tau > su))
+                {
+                    mem->status_internal = FILTERDDP_STATUS_FRACTION_TO_BOUNDARY;
+                    return;
+                }
+                if ((softl && (VEL(out->ux+i, nux+is) - VEL(mem->lsl+i, j))*one_minus_tau > VEL(trial->ux+i, nux+is) - VEL(mem->lsl+i, j)) ||
+                    (softu && (VEL(out->ux+i, nux+nsi+is) - VEL(mem->lsu+i, j))*one_minus_tau > VEL(trial->ux+i, nux+nsi+is) - VEL(mem->lsu+i, j)))
                 {
                     mem->status_internal = FILTERDDP_STATUS_FRACTION_TO_BOUNDARY;
                     return;
@@ -1870,7 +2121,9 @@ static void filterddp_rollout(ocp_nlp_config *config, ocp_nlp_dims *dims, ocp_nl
             for (int j = 0; j < ngi; j++)
             {
                 if (VEL(mem->zsl+i, j)*one_minus_tau > VEL(mem->zsl_trial+i, j) ||
-                    VEL(mem->zsu+i, j)*one_minus_tau > VEL(mem->zsu_trial+i, j))
+                    VEL(mem->zsu+i, j)*one_minus_tau > VEL(mem->zsu_trial+i, j) ||
+                    VEL(mem->xil+i, j)*one_minus_tau > VEL(mem->xil_trial+i, j) ||
+                    VEL(mem->xiu+i, j)*one_minus_tau > VEL(mem->xiu_trial+i, j))
                 {
                     mem->status_internal = FILTERDDP_STATUS_FRACTION_TO_BOUNDARY;
                     return;
@@ -1897,9 +2150,20 @@ static void filterddp_rollout(ocp_nlp_config *config, ocp_nlp_dims *dims, ocp_nl
             double log_u = 0.0;
             for (int j = 0; j < ngi; j++)
             {
-                if (VEL(mem->maskgl+i, j) != 0.0)
+                int is = mem->idxs_g[i][j];
+                if (VEL(mem->masksl+i, j) != 0.0)
+                {
+                    log_l += log(VEL(mem->s_trial+i, j) - VEL(mem->gl+i, j) + VEL(trial->ux+i, nux+is));
+                    log_l += log(VEL(trial->ux+i, nux+is) - VEL(mem->lsl+i, j));
+                }
+                else if (VEL(mem->maskgl+i, j) != 0.0)
                     log_l += log(VEL(mem->s_trial+i, j) - VEL(mem->gl+i, j));
-                if (VEL(mem->maskgu+i, j) != 0.0)
+                if (VEL(mem->masksu+i, j) != 0.0)
+                {
+                    log_u += log(VEL(mem->gu+i, j) - VEL(mem->s_trial+i, j) + VEL(trial->ux+i, nux+nsi+is));
+                    log_u += log(VEL(trial->ux+i, nux+nsi+is) - VEL(mem->lsu+i, j));
+                }
+                else if (VEL(mem->maskgu+i, j) != 0.0)
                     log_u += log(VEL(mem->gu+i, j) - VEL(mem->s_trial+i, j));
             }
             mem->barrier_lagrangian_next -= mu*log_l;
@@ -2017,6 +2281,8 @@ static void filterddp_accept_trial(ocp_nlp_dims *dims, ocp_nlp_out *out, ocp_nlp
         blasfeo_dveccp(dims->nu[i], mem->zu_trial+i, 0, mem->zu+i, 0);
         blasfeo_dveccp(mem->ng[i], mem->zsl_trial+i, 0, mem->zsl+i, 0);
         blasfeo_dveccp(mem->ng[i], mem->zsu_trial+i, 0, mem->zsu+i, 0);
+        blasfeo_dveccp(mem->ng[i], mem->xil_trial+i, 0, mem->xil+i, 0);
+        blasfeo_dveccp(mem->ng[i], mem->xiu_trial+i, 0, mem->xiu+i, 0);
     }
 }
 
@@ -2047,6 +2313,9 @@ static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, oc
     {
         if (nx[i] != nx[i+1] || nu[i] != nu[i+1] || mem->nh[i] != mem->nh[i+1] || mem->ng[i] != mem->ng[i+1])
             return 0;
+        for (int j = 0; j < mem->ng[i]; j++)
+            if (mem->idxs_g[i][j] != mem->idxs_g[i+1][j])
+                return 0;
     }
     if (nx[N] != nx[N-1])
         return 0;
@@ -2068,9 +2337,12 @@ static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, oc
         int nui = nu[i];
         int nhi = mem->nh[i];
         int ngi = mem->ng[i];
+        int nux = nui+nxi;
+        int nsi = ((ocp_nlp_constraints_bgh_dims *) dims->constraints[i])->ns;
 
         for (int j = 0; j < nxi; j++)
             VEL(&work->xi, j) = VEL(trial->ux+i, nui+j) - VEL(out->ux+k, nui+j);
+        blasfeo_dveccp(2*nsi, out->ux+k, nux, trial->ux+i, nux);
         filterddp_apply_rule(nui, nxi, out->ux+k, 0, 1.0, mem->alpha_beta+k, &work->xi, trial->ux+i, 0);
         filterddp_apply_rule(nhi, nxi, mem->phi+k, 0, 1.0, mem->psih_omegah+k, &work->xi, mem->phi_trial+i, 0);
         filterddp_apply_rule(nui, nxi, mem->zl+k, 0, 1.0, mem->chil_zetal+k, &work->xi, mem->zl_trial+i, 0);
@@ -2081,6 +2353,20 @@ static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, oc
             filterddp_apply_rule(ngi, nxi, mem->nu+k, 0, 1.0, mem->psig_omegag+k, &work->xi, mem->nu_trial+i, 0);
             filterddp_apply_rule(ngi, nxi, mem->zsl+k, 0, 1.0, mem->chisl_zetasl+k, &work->xi, mem->zsl_trial+i, 0);
             filterddp_apply_rule(ngi, nxi, mem->zsu+k, 0, 1.0, mem->chisu_zetasu+k, &work->xi, mem->zsu_trial+i, 0);
+            for (int j = 0; j < ngi; j++)
+            {
+                int is = mem->idxs_g[i][j];
+                if (VEL(mem->masksl+i, j) != 0.0)
+                {
+                    VEL(trial->ux+i, nux+is) = VEL(out->ux+k, nux+is) + filterddp_rule_value(nxi, mem->sigl_rule+k, j, &work->xi, 1.0);
+                    VEL(mem->xil_trial+i, j) = VEL(mem->xil+k, j) + filterddp_rule_value(nxi, mem->xil_rule+k, j, &work->xi, 1.0);
+                }
+                if (VEL(mem->masksu+i, j) != 0.0)
+                {
+                    VEL(trial->ux+i, nux+nsi+is) = VEL(out->ux+k, nux+nsi+is) + filterddp_rule_value(nxi, mem->sigu_rule+k, j, &work->xi, 1.0);
+                    VEL(mem->xiu_trial+i, j) = VEL(mem->xiu+k, j) + filterddp_rule_value(nxi, mem->xiu_rule+k, j, &work->xi, 1.0);
+                }
+            }
         }
         for (int j = 0; j < nui; j++)
         {
@@ -2091,12 +2377,29 @@ static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, oc
         }
         for (int j = 0; j < ngi; j++)
         {
-            VEL(mem->s_trial+i, j) = filterddp_interior(VEL(mem->s_trial+i, j), VEL(mem->gl+i, j), VEL(mem->gu+i, j),
+            int is = mem->idxs_g[i][j];
+            double gl = VEL(mem->gl+i, j);
+            double gu = VEL(mem->gu+i, j);
+            if (VEL(mem->masksl+i, j) != 0.0)
+            {
+                VEL(trial->ux+i, nux+is) = filterddp_interior(VEL(trial->ux+i, nux+is), VEL(mem->lsl+i, j), 0.0, 1, 0,
+                        opts->kappa_1, opts->kappa_2);
+                VEL(mem->xil_trial+i, j) = filterddp_max(VEL(mem->xil_trial+i, j), dual_floor);
+                gl -= VEL(trial->ux+i, nux+is);
+            }
+            if (VEL(mem->masksu+i, j) != 0.0)
+            {
+                VEL(trial->ux+i, nux+nsi+is) = filterddp_interior(VEL(trial->ux+i, nux+nsi+is), VEL(mem->lsu+i, j), 0.0, 1, 0,
+                        opts->kappa_1, opts->kappa_2);
+                VEL(mem->xiu_trial+i, j) = filterddp_max(VEL(mem->xiu_trial+i, j), dual_floor);
+                gu += VEL(trial->ux+i, nux+nsi+is);
+            }
+            VEL(mem->s_trial+i, j) = filterddp_interior(VEL(mem->s_trial+i, j), gl, gu,
                     VEL(mem->maskgl+i, j) != 0.0, VEL(mem->maskgu+i, j) != 0.0, opts->kappa_1, opts->kappa_2);
             VEL(mem->zsl_trial+i, j) = filterddp_max(VEL(mem->zsl_trial+i, j), dual_floor)*VEL(mem->maskgl+i, j);
             VEL(mem->zsu_trial+i, j) = filterddp_max(VEL(mem->zsu_trial+i, j), dual_floor)*VEL(mem->maskgu+i, j);
         }
-        if (!filterddp_all_finite(nui+nxi, trial->ux+i, 0) || !filterddp_all_finite(ngi, mem->s_trial+i, 0))
+        if (!filterddp_all_finite(nux+2*nsi, trial->ux+i, 0) || !filterddp_all_finite(ngi, mem->s_trial+i, 0))
         {
             ok = 0;
             break;
@@ -2150,7 +2453,8 @@ static void filterddp_export_solution(ocp_nlp_config *config, ocp_nlp_dims *dims
 
     // multipliers in the acados layout: equality rows get phi split by sign over the two sides,
     // bounds on u and slacked inequality rows the interior point duals of their bounds (nu = zsu - zsl
-    // at a solution), and the initial state rows the value function gradient at stage 0. The dynamics
+    // at a solution), the slack bounds of soft rows their multipliers, and the initial state rows the
+    // value function gradient at stage 0. The soft constraint slacks are already in ux. The dynamics
     // multipliers pi and the value function gradient are those attaining dual_inf: the costate, or the
     // primal-dual value gradient that the backward pass leaves in pi.
     struct blasfeo_dvec *value_gradient_0 = mem->stationarity_costate ? mem->costate : &work->Vd;
@@ -2158,21 +2462,28 @@ static void filterddp_export_solution(ocp_nlp_config *config, ocp_nlp_dims *dims
     {
         if (mem->stationarity_costate)
             filterddp_set_pi(dims, out, i, mem->costate+i+1);
-        int ni = dims->ni[i];
         ocp_nlp_constraints_bgh_dims *cdims = dims->constraints[i];
         ocp_nlp_constraints_bgh_model *model = in->constraints[i];
+        int ni0 = filterddp_nrows(cdims);
         filterddp_set_lam(dims, out, mem, i, mem->phi+i, mem->nu+i);
         for (int j = 0; j < cdims->nbu; j++)
         {
+            if (mem->idxs_row[i][j] >= 0)
+                continue;
             int col = model->idxb[j];
             VEL(out->lam+i, j) = VEL(mem->zl+i, col);
-            VEL(out->lam+i, ni+j) = VEL(mem->zu+i, col);
+            VEL(out->lam+i, ni0+j) = VEL(mem->zu+i, col);
         }
         for (int j = 0; j < mem->ng[i]; j++)
         {
             int idx = mem->idxg[i][j];
+            int is = mem->idxs_g[i][j];
             VEL(out->lam+i, idx) = VEL(mem->zsl+i, j);
-            VEL(out->lam+i, ni+idx) = VEL(mem->zsu+i, j);
+            VEL(out->lam+i, ni0+idx) = VEL(mem->zsu+i, j);
+            if (VEL(mem->masksl+i, j) != 0.0)
+                VEL(out->lam+i, 2*ni0+is) = VEL(mem->xil+i, j);
+            if (VEL(mem->masksu+i, j) != 0.0)
+                VEL(out->lam+i, 2*ni0+cdims->ns+is) = VEL(mem->xiu+i, j);
         }
         if (i == 0)
         {
@@ -2180,7 +2491,7 @@ static void filterddp_export_solution(ocp_nlp_config *config, ocp_nlp_dims *dims
             {
                 double v = VEL(value_gradient_0, model->idxb[j]-dims->nu[0]);
                 VEL(out->lam+i, j) = v > 0.0 ? v : 0.0;
-                VEL(out->lam+i, ni+j) = v < 0.0 ? -v : 0.0;
+                VEL(out->lam+i, ni0+j) = v < 0.0 ? -v : 0.0;
             }
         }
     }
@@ -2236,7 +2547,7 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
     {
         ocp_nlp_constraints_bgh_model *model = nlp_in->constraints[i];
         ocp_nlp_constraints_bgh_dims *cdims = dims->constraints[i];
-        int ni = dims->ni[i];
+        int ni0 = filterddp_nrows(cdims);
         blasfeo_dvecse(dims->nu[i], -INFINITY, mem->ul+i, 0);
         blasfeo_dvecse(dims->nu[i], INFINITY, mem->uu+i, 0);
         blasfeo_dvecse(dims->nu[i], 0.0, mem->maskul+i, 0);
@@ -2244,24 +2555,32 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
         for (int j = 0; j < cdims->nbu; j++)
         {
             int col = model->idxb[j];
+            if (mem->idxs_row[i][j] >= 0)
+                continue; // soft control bounds are inequality rows
             if (VEL(nlp_in->dmask+i, j) != 0.0)
             {
                 VEL(mem->ul+i, col) = VEL(&model->d, j);
                 VEL(mem->maskul+i, col) = 1.0;
             }
-            if (VEL(nlp_in->dmask+i, ni+j) != 0.0)
+            if (VEL(nlp_in->dmask+i, ni0+j) != 0.0)
             {
-                VEL(mem->uu+i, col) = VEL(&model->d, ni+j);
+                VEL(mem->uu+i, col) = VEL(&model->d, ni0+j);
                 VEL(mem->maskuu+i, col) = 1.0;
             }
         }
         for (int j = 0; j < mem->ng[i]; j++)
         {
             int idx = mem->idxg[i][j];
+            int is = mem->idxs_g[i][j];
             VEL(mem->maskgl+i, j) = VEL(nlp_in->dmask+i, idx) != 0.0 ? 1.0 : 0.0;
-            VEL(mem->maskgu+i, j) = VEL(nlp_in->dmask+i, ni+idx) != 0.0 ? 1.0 : 0.0;
+            VEL(mem->maskgu+i, j) = VEL(nlp_in->dmask+i, ni0+idx) != 0.0 ? 1.0 : 0.0;
             VEL(mem->gl+i, j) = VEL(mem->maskgl+i, j) != 0.0 ? VEL(&model->d, idx) : -INFINITY;
-            VEL(mem->gu+i, j) = VEL(mem->maskgu+i, j) != 0.0 ? VEL(&model->d, ni+idx) : INFINITY;
+            VEL(mem->gu+i, j) = VEL(mem->maskgu+i, j) != 0.0 ? VEL(&model->d, ni0+idx) : INFINITY;
+            // the slacks of soft rows relax the bounded sides, sig >= ls from the slack bounds of d
+            VEL(mem->masksl+i, j) = (is >= 0 && VEL(mem->maskgl+i, j) != 0.0) ? 1.0 : 0.0;
+            VEL(mem->masksu+i, j) = (is >= 0 && VEL(mem->maskgu+i, j) != 0.0) ? 1.0 : 0.0;
+            VEL(mem->lsl+i, j) = is >= 0 ? VEL(&model->d, 2*ni0+is) : 0.0;
+            VEL(mem->lsu+i, j) = is >= 0 ? VEL(&model->d, 2*ni0+cdims->ns+is) : 0.0;
         }
     }
 
@@ -2502,11 +2821,6 @@ int ocp_nlp_filterddp_precompute(void *config_, void *dims_, void *nlp_in_, void
     }
     for (int i = 0; i <= N; i++)
     {
-        if (dims->ns[i] > 0)
-        {
-            printf("ocp_nlp_filterddp: soft constraints are not supported, got ns[%d] = %d.\n", i, dims->ns[i]);
-            exit(1);
-        }
         if (dims->nz[i] > 0)
         {
             printf("ocp_nlp_filterddp: algebraic variables are not supported, got nz[%d] = %d.\n", i, dims->nz[i]);
