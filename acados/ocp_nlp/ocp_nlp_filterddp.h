@@ -86,6 +86,7 @@ typedef struct
 
     int nlp_scaling;            // gradient based scaling of objective and constraints at the initial point
     double nlp_scaling_max_gradient;
+    int symmetric_value_hessian; // 1: symmetrise the value function Hessian after each stage
 
 } ocp_nlp_filterddp_opts;
 

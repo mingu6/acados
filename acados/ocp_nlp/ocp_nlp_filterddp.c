@@ -149,6 +149,7 @@ void ocp_nlp_filterddp_opts_initialize_default(void *config_, void *dims_, void 
 
     opts->nlp_scaling = 0;
     opts->nlp_scaling_max_gradient = 100.0;
+    opts->symmetric_value_hessian = 1;
 
     return;
 }
@@ -283,6 +284,10 @@ void ocp_nlp_filterddp_opts_set(void *config_, void *opts_, const char *field, v
     else if (!strcmp(field, "filterddp_nlp_scaling_max_gradient"))
     {
         opts->nlp_scaling_max_gradient = *(double *) value;
+    }
+    else if (!strcmp(field, "filterddp_symmetric_value_hessian"))
+    {
+        opts->symmetric_value_hessian = *(int *) value;
     }
     else
     {
@@ -1024,7 +1029,7 @@ static int filterddp_classify_constraints(ocp_nlp_dims *dims, ocp_nlp_in *nlp_in
                 mem->idxh[i][mem->nh[i]] = j;
                 mem->nh[i]++;
             }
-            else
+            else if (has_lower || has_upper)
             {
                 mem->idxg[i][mem->ng[i]] = j;
                 mem->ng[i]++;
@@ -1689,6 +1694,18 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
                 blasfeo_dgemm_tn(nxi, nxi, nhi, 1.0, mem->psih_omegah+i, 0, 1, &work->hx, 0, 0, 1.0, &work->Vxx, 0, 0, &work->Vxx, 0, 0);
             if (ngi > 0)
                 blasfeo_dgemm_tn(nxi, nxi, ngi, 1.0, mem->psig_omegag+i, 0, 1, &work->gx, 0, 0, 1.0, &work->Vxx, 0, 0, &work->Vxx, 0, 0);
+            if (opts->symmetric_value_hessian)
+            {
+                for (int j = 0; j < nxi; j++)
+                {
+                    for (int k = j+1; k < nxi; k++)
+                    {
+                        double v = 0.5*(EL(&work->Vxx, j, k) + EL(&work->Vxx, k, j));
+                        EL(&work->Vxx, j, k) = v;
+                        EL(&work->Vxx, k, j) = v;
+                    }
+                }
+            }
 
             blasfeo_dgemv_t(nui, nxi, 1.0, alpha_beta, 0, 1, &work->Qu, 0, 1.0, &work->lx, 0, &work->Vx_next, 0);
             blasfeo_dgemv_t(nx[i+1], nxi, 1.0, &work->fx, 0, 0, &work->Vx, 0, 1.0, &work->Vx_next, 0, &work->Vx_next, 0);
@@ -2262,6 +2279,11 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
 
         double opt_err_mu = filterddp_max(filterddp_max(mem->dual_inf, mem->cs_inf_mu), mem->primal_inf);
         double opt_err_0 = filterddp_max(filterddp_max(mem->dual_inf, mem->cs_inf_0), mem->primal_inf);
+        if (!isfinite(mem->dual_inf) || !isfinite(mem->primal_inf) || !isfinite(mem->cs_inf_0) || !isfinite(mem->objective))
+        {
+            nlp_mem->status = ACADOS_NAN_DETECTED;
+            break;
+        }
 
         if (opt_err_0 < nlp_opts->tol_stat)
         {
