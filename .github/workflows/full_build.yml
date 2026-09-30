@@ -372,6 +372,17 @@ jobs:
         python acrobot_nmpc.py
         python acrobot_nmpc.py --control_limits
 
+    - name: FILTERDDP waypoint flight
+      working-directory: ${{ github.workspace }}/examples/acados_python/filterddp/waypoint_flight
+      shell: bash
+      run: |
+        source ${{ github.workspace }}/acadosenv/bin/activate
+        git clone --quiet https://github.com/uzh-rpg/rpg_time_optimal data/rpg_time_optimal
+        git -C data/rpg_time_optimal checkout --quiet f5541b6d9d3dee563e01a64ec1994b8ed6c0076c
+        export RPG_TIME_OPTIMAL_DIR=data/rpg_time_optimal
+        python solve_waypoint_flight.py --track three_gates
+        python solve_waypoint_flight.py --track lap
+
 
   python_cmake_tests:
     needs: call_core_build
