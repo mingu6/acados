@@ -2820,6 +2820,8 @@ static void {{ name }}_acados_create_set_opts({{ name }}_solver_capsule* capsule
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_warm_start", &filterddp_warm_start);
     int filterddp_symmetric_value_hessian = {{ solver_options.filterddp_symmetric_value_hessian }};
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_symmetric_value_hessian", &filterddp_symmetric_value_hessian);
+    int filterddp_dynamics_multiplier = {{ solver_options.filterddp_dynamics_multiplier }};
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_dynamics_multiplier", &filterddp_dynamics_multiplier);
 {%- endif %}
 
 {% if solver_options.nlp_solver_type == "SQP" or solver_options.nlp_solver_type == "DDP" or solver_options.nlp_solver_type == "SQP_WITH_FEASIBLE_QP" or solver_options.nlp_solver_type == "FILTERDDP"%}

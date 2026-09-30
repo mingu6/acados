@@ -178,7 +178,8 @@ class AcadosOcpOptions:
         self.__filterddp_theta_max_factor = 1e6
         self.__filterddp_theta_min_factor = 1e-4
         self.__filterddp_warm_start = False
-        self.__filterddp_symmetric_value_hessian = True
+        self.__filterddp_symmetric_value_hessian = 2
+        self.__filterddp_dynamics_multiplier = 0
 
         # TODO: remove those once deprecated fields are removed
         env = os.environ
@@ -2781,18 +2782,39 @@ class AcadosOcpOptions:
     @property
     def filterddp_symmetric_value_hessian(self):
         """
-        FILTERDDP: Symmetrize the value function Hessian at each stage of the backward pass; the recursion amplifies rounding asymmetry for unstable dynamics.
+        FILTERDDP: Form of the value function Hessian recursion; the recursion amplifies rounding asymmetry for unstable dynamics.
+        0: C + beta' B + omega' cx as computed; 1: the same averaged with its transpose;
+        2: the factored Schur complement form, symmetric by construction.
 
-        Default: True
+        Default: 2
         """
         return self.__filterddp_symmetric_value_hessian
 
     @filterddp_symmetric_value_hessian.setter
     def filterddp_symmetric_value_hessian(self, filterddp_symmetric_value_hessian):
-        if isinstance(filterddp_symmetric_value_hessian, bool):
-            self.__filterddp_symmetric_value_hessian = filterddp_symmetric_value_hessian
+        if isinstance(filterddp_symmetric_value_hessian, (bool, int)) and int(filterddp_symmetric_value_hessian) in (0, 1, 2):
+            self.__filterddp_symmetric_value_hessian = int(filterddp_symmetric_value_hessian)
         else:
-            raise TypeError('Invalid filterddp_symmetric_value_hessian value. Expected bool.')
+            raise TypeError('Invalid filterddp_symmetric_value_hessian value. Expected 0, 1 or 2.')
+
+    @property
+    def filterddp_dynamics_multiplier(self):
+        """
+        FILTERDDP: Multiplier of the dynamics Hessian contraction in the backward pass.
+        0: the costate lambda if the problem has constraint rows, else the value gradient Vx; 1: lambda; 2: Vx;
+        3: per stage the one of Vx and lambda with the smaller inf-norm; 4: elementwise the entry of smaller magnitude.
+
+        Default: 0
+        """
+        return self.__filterddp_dynamics_multiplier
+
+    @filterddp_dynamics_multiplier.setter
+    def filterddp_dynamics_multiplier(self, filterddp_dynamics_multiplier):
+        if isinstance(filterddp_dynamics_multiplier, int) and not isinstance(filterddp_dynamics_multiplier, bool) \
+                and filterddp_dynamics_multiplier in range(5):
+            self.__filterddp_dynamics_multiplier = filterddp_dynamics_multiplier
+        else:
+            raise TypeError('Invalid filterddp_dynamics_multiplier value. Expected an int in 0..4.')
 
     def set(self, attr, value):
         setattr(self, attr, value)

@@ -85,7 +85,12 @@ typedef struct
     double theta_min_factor;    // constraint violation threshold for the switching condition, relative to initial
 
     int warm_start;             // 1: initialize each solve from the shifted affine policy and final barrier parameter of the previous solve
-    int symmetric_value_hessian; // 1: symmetrise the value function Hessian after each stage
+    int symmetric_value_hessian; // value function Hessian recursion: 0: C + beta' B + omega' cx as computed,
+                                 // 1: the same averaged with its transpose, 2 (default): the factored Schur complement
+                                 // form C + (betaY' B + B' betaY) + betaY' H betaY - W' W, symmetric by construction
+    int dynamics_multiplier;    // multiplier of the dynamics Hessian contraction: 0: lambda if the problem has
+                                // constraint rows, else Vx; 1: lambda; 2: Vx; 3: the one of Vx, lambda with the
+                                // smaller inf-norm, per stage; 4: elementwise the entry of smaller magnitude
 
 } ocp_nlp_filterddp_opts;
 
@@ -265,6 +270,10 @@ typedef struct
     struct blasfeo_dmat B;
     struct blasfeo_dmat xx_tmp;
     struct blasfeo_dmat ux_tmp;
+    struct blasfeo_dmat betaY;    // range space part Y aby of the feedback gain (symmetric value Hessian form)
+    struct blasfeo_dmat HbetaY;   // H betaY
+    struct blasfeo_dmat sg_tmp;   // Sigmas gx
+    struct blasfeo_dvec pi_tmp;   // elementwise selection of Vx and lambda
     struct blasfeo_dvec Qu;
     struct blasfeo_dvec Qs;
     struct blasfeo_dvec Lu;

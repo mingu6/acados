@@ -148,7 +148,8 @@ void ocp_nlp_filterddp_opts_initialize_default(void *config_, void *dims_, void 
     opts->theta_min_factor = 1e-4;
 
     opts->warm_start = 0;
-    opts->symmetric_value_hessian = 1;
+    opts->symmetric_value_hessian = 2;
+    opts->dynamics_multiplier = 0;
 
     return;
 }
@@ -283,6 +284,10 @@ void ocp_nlp_filterddp_opts_set(void *config_, void *opts_, const char *field, v
     else if (!strcmp(field, "filterddp_symmetric_value_hessian"))
     {
         opts->symmetric_value_hessian = *(int *) value;
+    }
+    else if (!strcmp(field, "filterddp_dynamics_multiplier"))
+    {
+        opts->dynamics_multiplier = *(int *) value;
     }
     else
     {
@@ -612,7 +617,9 @@ acados_size_t ocp_nlp_filterddp_workspace_calculate_size(void *config_, void *di
     size += 2*blasfeo_memsize_dvec(nu_max);                 // lu, Qu
     size += 2*blasfeo_memsize_dvec(nu_max);                 // Lu, Lu_costate
     size += 3*blasfeo_memsize_dmat(nu_max, nu_max);         // H, Hsolve, Lchol
-    size += 2*blasfeo_memsize_dmat(nu_max, nx_max);         // B, ux_tmp
+    size += 4*blasfeo_memsize_dmat(nu_max, nx_max);         // B, ux_tmp, betaY, HbetaY
+    size += blasfeo_memsize_dmat(ni_max, nx_max);           // sg_tmp
+    size += blasfeo_memsize_dvec(nx_max);                   // pi_tmp
     size += blasfeo_memsize_dmat(nx_max, nx_max);           // xx_tmp
     size += 6*blasfeo_memsize_dvec(nu_max);                 // ul_dist ... SigmaU
     size += 7*blasfeo_memsize_dvec(ni_max);                 // sl_dist ... Sigmas
@@ -690,6 +697,10 @@ static void ocp_nlp_filterddp_cast_workspace(ocp_nlp_config *config, ocp_nlp_dim
     assign_and_advance_blasfeo_dmat_mem(nu_max, nx_max, &work->B, &c_ptr);
     assign_and_advance_blasfeo_dmat_mem(nx_max, nx_max, &work->xx_tmp, &c_ptr);
     assign_and_advance_blasfeo_dmat_mem(nu_max, nx_max, &work->ux_tmp, &c_ptr);
+    assign_and_advance_blasfeo_dmat_mem(nu_max, nx_max, &work->betaY, &c_ptr);
+    assign_and_advance_blasfeo_dmat_mem(nu_max, nx_max, &work->HbetaY, &c_ptr);
+    assign_and_advance_blasfeo_dmat_mem(ni_max, nx_max, &work->sg_tmp, &c_ptr);
+    assign_and_advance_blasfeo_dvec_mem(nx_max, &work->pi_tmp, &c_ptr);
     assign_and_advance_blasfeo_dvec_mem(nu_max, &work->Qu, &c_ptr);
     assign_and_advance_blasfeo_dvec_mem(ni_max, &work->Qs, &c_ptr);
     assign_and_advance_blasfeo_dvec_mem(nu_max, &work->Lu, &c_ptr);
@@ -1419,8 +1430,32 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
                 ni_bounds += (VEL(mem->maskgl+i, j) != 0.0) + (VEL(mem->maskgu+i, j) != 0.0)
                         + (VEL(masksl, j) != 0.0) + (VEL(masksu, j) != 0.0);
 
-            // linearize stage i with the current dynamics multiplier
-            filterddp_set_pi(dims, out, i, unconstrained ? &work->Vx : &work->lambda);
+            // linearize stage i with the current dynamics multiplier: the costate lambda_{i+1} or the value
+            // gradient Vx_{i+1}, equal at a solution
+            {
+                struct blasfeo_dvec *pi_i;
+                int mode = opts->dynamics_multiplier;
+                if (mode == 0)
+                    pi_i = unconstrained ? &work->Vx : &work->lambda;
+                else if (mode == 1)
+                    pi_i = &work->lambda;
+                else if (mode == 2)
+                    pi_i = &work->Vx;
+                else if (mode == 3)
+                    pi_i = filterddp_norm_inf(nx[i+1], &work->Vx, 0) <= filterddp_norm_inf(nx[i+1], &work->lambda, 0)
+                            ? &work->Vx : &work->lambda;
+                else
+                {
+                    for (int j = 0; j < nx[i+1]; j++)
+                    {
+                        double v = VEL(&work->Vx, j);
+                        double l = VEL(&work->lambda, j);
+                        VEL(&work->pi_tmp, j) = fabs(v) <= fabs(l) ? v : l;
+                    }
+                    pi_i = &work->pi_tmp;
+                }
+                filterddp_set_pi(dims, out, i, pi_i);
+            }
             config->dynamics[i]->update_qp_matrices(config->dynamics[i], dims->dynamics[i],
                     in->dynamics[i], nlp_opts->dynamics[i], nlp_mem->dynamics[i], nlp_work->dynamics[i]);
             config->cost[i]->update_qp_matrices(config->cost[i], dims->cost[i], in->cost[i],
@@ -1855,13 +1890,52 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
             for (int j = 0; j < ngi; j++)
                 phi_norm += fabs(VEL(nu_, j));
 
-            // value function recursion
-            blasfeo_dgemm_tn(nxi, nxi, nui, 1.0, alpha_beta, 0, 1, &work->B, 0, 0, 1.0, &work->C, 0, 0, &work->Vxx, 0, 0);
-            if (nhi > 0)
-                blasfeo_dgemm_tn(nxi, nxi, nhi, 1.0, mem->psih_omegah+i, 0, 1, &work->hx, 0, 0, 1.0, &work->Vxx, 0, 0, &work->Vxx, 0, 0);
-            if (ngi > 0)
-                blasfeo_dgemm_tn(nxi, nxi, ngi, 1.0, mem->psig_omegag+i, 0, 1, &work->gx, 0, 0, 1.0, &work->Vxx, 0, 0, &work->Vxx, 0, 0);
-            if (opts->symmetric_value_hessian)
+            // value function recursion. With the reduced blocks Hs = H + gu' Sigmas gu, Bs = B + gu' Sigmas gx,
+            // Cs = C + gx' Sigmas gx of the stage KKT system [Hs A; A' 0] [beta; omega] = -[Bs; cx], the paper's
+            // P = Cs + beta' Hs beta + Bs' beta + beta' Bs reduces to the Schur complement
+            // P = Cs + beta' Bs + omega' cx, symmetric only up to the residual of the KKT solve.
+            if (opts->symmetric_value_hessian == 2)
+            {
+                // the same Schur complement through the factorization: with beta = betaY + Z aZ, betaY = Y aY,
+                // P = Cs + (betaY' Bs + Bs' betaY) + betaY' Hs betaY - W' W, W = LM^{-1} Z' (Bs + Hs betaY);
+                // without equality rows P = Cs - W' W, W = L^{-1} Bs. Rs = [-Qu_s, -Bs], sol_tmp = L^{-1} Rs and
+                // abz = LM^{-1} Z' (Rs - Hs betaY) hold -W in their columns 1:nx.
+                if (ngi > 0)
+                {
+                    blasfeo_dgemm_dn(ngi, nxi, 1.0, &work->Sigmas, 0, &work->gx, 0, 0, 0.0, &work->sg_tmp, 0, 0, &work->sg_tmp, 0, 0);
+                    blasfeo_dgemm_tn(nxi, nxi, ngi, 1.0, &work->gx, 0, 0, &work->sg_tmp, 0, 0, 1.0, &work->C, 0, 0, &work->C, 0, 0);
+                }
+                if (nhi > 0)
+                {
+                    blasfeo_dgemm_nn(nui, nxi, nhi, 1.0, &work->Y, 0, 0, &work->aby, 0, 1, 0.0, &work->betaY, 0, 0, &work->betaY, 0, 0);
+                    blasfeo_dgemm_nn(nui, nxi, nhi, 1.0, &work->HY, 0, 0, &work->aby, 0, 1, 0.0, &work->HbetaY, 0, 0, &work->HbetaY, 0, 0);
+                    // xx_tmp = betaY' Bs = -betaY' Rs[:, 1:]
+                    blasfeo_dgemm_tn(nxi, nxi, nui, -1.0, &work->betaY, 0, 0, Rs, 0, 1, 0.0, &work->xx_tmp, 0, 0, &work->xx_tmp, 0, 0);
+                    for (int j = 0; j < nxi; j++)
+                        for (int k = 0; k < nxi; k++)
+                            EL(&work->Vxx, j, k) = EL(&work->C, j, k) + EL(&work->xx_tmp, j, k) + EL(&work->xx_tmp, k, j);
+                    blasfeo_dgemm_tn(nxi, nxi, nui, 1.0, &work->betaY, 0, 0, &work->HbetaY, 0, 0, 1.0, &work->Vxx, 0, 0, &work->Vxx, 0, 0);
+                    if (nz > 0)
+                        blasfeo_dgemm_tn(nxi, nxi, nz, -1.0, &work->abz, 0, 1, &work->abz, 0, 1, 1.0, &work->Vxx, 0, 0, &work->Vxx, 0, 0);
+                }
+                else
+                {
+                    blasfeo_dgemm_tn(nxi, nxi, nui, -1.0, &work->sol_tmp, 0, 1, &work->sol_tmp, 0, 1, 1.0, &work->C, 0, 0, &work->Vxx, 0, 0);
+                }
+                // exactly symmetric: the rounding asymmetry of the products is mirrored away
+                for (int j = 0; j < nxi; j++)
+                    for (int k = j+1; k < nxi; k++)
+                        EL(&work->Vxx, j, k) = EL(&work->Vxx, k, j);
+            }
+            else
+            {
+                blasfeo_dgemm_tn(nxi, nxi, nui, 1.0, alpha_beta, 0, 1, &work->B, 0, 0, 1.0, &work->C, 0, 0, &work->Vxx, 0, 0);
+                if (nhi > 0)
+                    blasfeo_dgemm_tn(nxi, nxi, nhi, 1.0, mem->psih_omegah+i, 0, 1, &work->hx, 0, 0, 1.0, &work->Vxx, 0, 0, &work->Vxx, 0, 0);
+                if (ngi > 0)
+                    blasfeo_dgemm_tn(nxi, nxi, ngi, 1.0, mem->psig_omegag+i, 0, 1, &work->gx, 0, 0, 1.0, &work->Vxx, 0, 0, &work->Vxx, 0, 0);
+            }
+            if (opts->symmetric_value_hessian == 1)
             {
                 for (int j = 0; j < nxi; j++)
                 {

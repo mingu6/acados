@@ -169,6 +169,7 @@ classdef AcadosOcpOptions < handle
         filterddp_theta_min_factor
         filterddp_warm_start
         filterddp_symmetric_value_hessian
+        filterddp_dynamics_multiplier
 
         compile_interface
 
@@ -325,7 +326,8 @@ classdef AcadosOcpOptions < handle
             obj.filterddp_theta_max_factor = 1e6;
             obj.filterddp_theta_min_factor = 1e-4;
             obj.filterddp_warm_start = false;
-            obj.filterddp_symmetric_value_hessian = true;
+            obj.filterddp_symmetric_value_hessian = 2;
+            obj.filterddp_dynamics_multiplier = 0;
 
             obj.compile_interface = []; % corresponds to automatic detection, possible values: true, false, []
 
