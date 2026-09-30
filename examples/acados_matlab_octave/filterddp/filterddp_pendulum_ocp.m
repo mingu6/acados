@@ -85,7 +85,7 @@ function ocp = filterddp_pendulum_ocp(N, T, x0, tag)
     opts.nlp_solver_tol_eq = 1e-8;
     opts.nlp_solver_tol_ineq = 1e-8;
     opts.nlp_solver_tol_comp = 1e-8;
-    if startsWith(tag, 'filterddp')
+    if strncmp(tag, 'filterddp', 9)
         opts.nlp_solver_type = 'FILTERDDP';
         opts.regularize_method = 'NO_REGULARIZE';
         opts.globalization = 'FIXED_STEP';

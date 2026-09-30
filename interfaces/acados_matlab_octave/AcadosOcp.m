@@ -1488,8 +1488,9 @@ classdef AcadosOcp < handle
                            'qp_solver_warm_start', 'qp_solver_mu0', 'qpscaling_scale_constraints', 'qpscaling_scale_objective', ...
                            'store_iterates', 'log_primal_step_norm', 'log_dual_step_norm', 'timeout_max_time'};
                 changed = {};
+                props = fieldnames(opts);  % isprop does not see classdef properties in Octave 6
                 for k = 1:numel(ignored)
-                    if isprop(opts, ignored{k}) && ~isequal(opts.(ignored{k}), defaults.(ignored{k}))
+                    if any(strcmp(ignored{k}, props)) && ~isequal(opts.(ignored{k}), defaults.(ignored{k}))
                         changed{end+1} = ignored{k};
                     end
                 end
@@ -1497,7 +1498,7 @@ classdef AcadosOcp < handle
                 filled = {'globalization_alpha_min', 0.05; 'globalization_eps_sufficient_descent', 1e-4; ...
                           'globalization_full_step_dual', 0; 'nlp_solver_tol_min_step_norm', 0};
                 for k = 1:size(filled, 1)
-                    if isprop(opts, filled{k, 1}) && ~isempty(opts.(filled{k, 1})) && ~isequal(opts.(filled{k, 1}), filled{k, 2})
+                    if any(strcmp(filled{k, 1}, props)) && ~isempty(opts.(filled{k, 1})) && ~isequal(opts.(filled{k, 1}), filled{k, 2})
                         changed{end+1} = filled{k, 1};
                     end
                 end
