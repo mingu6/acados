@@ -10,11 +10,11 @@ stride. It uses no mode schedule and no reference trajectory:
 - the contact sequence emerges from complementarity constraints;
 - the swing foot is kept off the ground by a speed-dependent clearance rule.
 
-![Spring Flamingo full stride: the default solution of this OCP](media/flamingo.gif)
+![Spring Flamingo full stride: a solution of this OCP](media/flamingo.gif)
 
-The animation is the default solution of the Results section, unrolled to a
-full stride with its mirror symmetry (`./reproduce.sh` regenerates it and
-the figure below as `output/flamingo/flamingo.gif` and `.png`).
+The animation is a solution of this OCP, unrolled to a full stride with its
+mirror symmetry (`./reproduce.sh` regenerates it and the figure below as
+`output/flamingo/flamingo.gif` and `.png`).
 
 The mechanics are a variational (midpoint inverse-dynamics) contact-implicit
 integrator in which the next configuration is a control. Pinocchio
@@ -379,23 +379,15 @@ returned trajectory (`contact_implicit_numpy`, `solve_flamingo.evaluate_trajecto
 
 ## Results
 
-Default solve, on a 12th Gen Intel Core i7-12700 with one thread. The
-solve time is the median of three timed solves after a warmup, excluding
-code generation.
+`solve_flamingo.py` prints the solver status, iteration count, and solve
+time, the objective and cost of transport, the maximum equality violation and
+periodicity residual recomputed in numpy, and the contact-mode pattern with
+its distance to Posa Fig. 6. `summary.json` in the output directory holds
+the full set of checks (relaxations, load-weighted slip, torque range, swing
+apex and speed). Iteration counts and timings depend on the machine and the
+acados build, so they are not tabulated here.
 
-| Quantity | Value |
-| --- | --- |
-| Status, iterations, solve time | converged, 282, 1.03 s |
-| Barrier path | $\mu$ = 0.1, 0.02, $8\times10^{-4}$, $2.8\times10^{-5}$; peak regularization 98, zero at the end |
-| Objective, cost of transport | 0.21348, 0.0810 |
-| Max equality violation (numpy) | $2.3\times10^{-8}$ |
-| Min inequality, periodicity residual | $2.0\times10^{-6}$ (the pinned gap), $9.6\times10^{-21}$ |
-| Max $\sigma_n$, $\sigma_f$ | $9.1\times10^{-6}$, $1.2\times10^{-5}$ |
-| Max load-weighted slip speed | 0.0023 m/s |
-| Torque range | $[-28.5, 8.4]$ N m (the $\pm100$ N m bound is inactive) |
-| Swing apex, peak swing speed | 5.2 cm, 0.91 m/s |
-
-![Posa-style figure of the default solution: filmstrip, CM height, and per-foot contact modes](media/flamingo.png)
+![Posa-style figure of a solution: filmstrip, CM height, and per-foot contact modes](media/flamingo.png)
 
 The figure follows Posa Figs. 5-6: a filmstrip of the full stride, the CM
 height, and each foot's contact mode, with the Bezier initial guess dashed.
@@ -408,39 +400,24 @@ W (swing). A point counts as loaded above 1% of body weight. The half stride
 is unrolled to a full cycle with its mirror symmetry. Posa's optimized
 sequence, read from Fig. 6, is stance 0.50, toe-only 0.16 (push-off 0.13 plus
 toe-first touchdown 0.03), heel-only 0, swing 0.34, and double support 0.32,
-in the order S-T-W-T over 1.88 s.
-
-| | Stance | Toe only | Heel only | Swing | Double support | Distance |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Posa Fig. 6 | 0.50 | 0.16 | 0.00 | 0.34 | 0.32 | 0 |
-| This OCP | 0.50 | 0.17 | 0.01 | 0.31 | 0.37 | 0.10 |
-
-Each foot pushes off on its toe (about 0.1 s), swings for about 0.31 s, and
-lands heel-first for one interval before going flat. The distance is the L1
-distance of the fractions plus the double-support difference. The cycle is
-1.10 s against Posa's 1.88 s, because $h$ and $N$ are the gait's. Each half
-starts with a short toe-only phase and a one-interval lift of the leading
-foot. This is imposed by $x_0$, which is taken from the gait at a touchdown
-instant.
+in the order S-T-W-T over 1.88 s. The reported distance is the L1 distance
+of the fractions plus the double-support difference. Solutions of this OCP
+show the same structure: each foot pushes off on its toe, swings, and lands
+heel-first for about one interval before going flat. The cycle is shorter
+than Posa's because $h$ and $N$ are the gait's, and each half starts with a
+short toe-only phase and a one-interval lift of the leading foot, imposed by
+$x_0$, which is taken from the gait at a touchdown instant.
 
 **Local solutions.** The problem is non-convex, and the barrier path
 selects one of several nearby local optima. Solves are deterministic for
-identical inputs. Perturbing the pinned gap $g_{\min}$ by a few µm, which
-changes the targets but not the problem's character, gives:
-
-| $g_{\min}$ [µm] | Iter. | CoT | Swing apex [cm] | Stance / toe / heel / swing | Double support | Distance to Posa |
-| ---: | ---: | ---: | ---: | --- | ---: | ---: |
-| 1.5 | 423 | 0.0675 | 2.7 | 0.49 / 0.19 / 0.01 / 0.31 | 0.37 | 0.13 |
-| **2 (default)** | **282** | **0.0810** | **5.2** | **0.50 / 0.17 / 0.01 / 0.31** | **0.37** | **0.10** |
-| 2.5 | 419 | 0.0678 | 2.8 | 0.50 / 0.17 / 0.01 / 0.31 | 0.37 | 0.10 |
-| 3 | 506 | 0.0684 | 2.5 | 0.54 / 0.14 / 0.00 / 0.31 | 0.37 | 0.14 |
-| 4 | 549 | 0.0610 | 2.6 | 0.46 / 0.21 / 0.01 / 0.31 | 0.37 | 0.19 |
-
-All five converge. The contact structure is stable: toe push-off, a swing
-fraction of 0.31, and double support of 0.37. The cost of transport
-(0.061-0.081) and swing apex (2.5-5.2 cm) vary between local solutions, so
-single-run differences of that size are not meaningful. The default run
-reaches a higher-stepping local solution than the others.
+identical inputs, but rounding-level changes (another machine, BLASFEO
+target, or solver revision) can select a different local solution with a
+different iteration count. `reproduce.sh` also perturbs the pinned gap
+$g_{\min}$ by a few µm, which changes the targets but not the problem's
+character: all runs converge with the same contact structure (toe push-off,
+similar swing and double-support fractions), while the cost of transport and
+swing apex vary between the local solutions. Single-run differences of that
+size are therefore not meaningful.
 
 ## Reproduction
 

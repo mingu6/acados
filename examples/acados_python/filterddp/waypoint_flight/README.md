@@ -42,13 +42,9 @@ initial guess.
 
 ## Results
 
-30 nodes per gate, FILTERDDP `tol = 1e-6`, IPOPT `tol = 1e-9`, single thread. FILTERDDP times
-exclude code generation (about 8 s).
-
-| Track | Waypoints / N | IPOPT | FILTERDDP |
-| --- | --- | --- | --- |
-| `three_gates` | 3 / 90 | $`t=3.545744`$ s, 307 it, 15 s | $`t=3.545794`$ s, 253 it, 0.7 s |
-| `lap` (first 7 gates, back to gate 0) | 8 / 240 | $`t=7.517082`$ s, 938 it, 173 s | $`t=7.517248`$ s, 777 it, 11 s |
-
-The remaining gaps come from the inexact penalty ($`\mu_N\approx1.4\cdot10^{-5}`$ and
-$`3\cdot10^{-5}`$) and the barrier floor.
+Tracks: `three_gates` (3 waypoints, $`N=90`$) and `lap` (the first 7 gates and back to gate 0, 8 waypoints,
+$`N=240`$). 30 nodes per gate, FILTERDDP `tol = 1e-6`, IPOPT `tol = 1e-9`, single thread. `reproduce.sh` prints,
+for each track, the status, iterations, lap time and wall time of both solvers and their difference in
+lap time. FILTERDDP reaches the CPC lap time of IPOPT to about $`10^{-4}`$ s on both tracks; the
+remaining gap comes from the inexact penalty on $`\mu_N`$ and the barrier floor. Iteration counts and
+timings depend on the machine and the acados build, so they are not tabulated here.
