@@ -368,12 +368,12 @@ acados_size_t ocp_nlp_filterddp_memory_calculate_size(void *config_, void *dims_
     int stat_n = 8;
     size += stat_n*stat_m*sizeof(double);
 
-    // classification
-    size += 6*N*sizeof(int);
-    size += 4*N*sizeof(int *);
+    // classification, and that of the previous solve
+    size += 8*N*sizeof(int);
+    size += 8*N*sizeof(int *);
     for (int i = 0; i < N; i++)
     {
-        size += 4*ni[i]*sizeof(int);
+        size += 8*ni[i]*sizeof(int);
     }
 
     // per stage vectors: 12 bounds, 9 iterate, 9 trial, 2 scaling
@@ -462,12 +462,22 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
     assign_and_advance_int_ptrs(N, &mem->idxg, &c_ptr);
     assign_and_advance_int_ptrs(N, &mem->idxs_row, &c_ptr);
     assign_and_advance_int_ptrs(N, &mem->idxs_g, &c_ptr);
+    assign_and_advance_int(N, &mem->nh_prev, &c_ptr);
+    assign_and_advance_int(N, &mem->ng_prev, &c_ptr);
+    assign_and_advance_int_ptrs(N, &mem->idxh_prev, &c_ptr);
+    assign_and_advance_int_ptrs(N, &mem->idxg_prev, &c_ptr);
+    assign_and_advance_int_ptrs(N, &mem->idxs_g_prev, &c_ptr);
+    assign_and_advance_int_ptrs(N, &mem->sides_prev, &c_ptr);
     for (int i = 0; i < N; i++)
     {
         assign_and_advance_int(ni[i], &mem->idxh[i], &c_ptr);
         assign_and_advance_int(ni[i], &mem->idxg[i], &c_ptr);
         assign_and_advance_int(ni[i], &mem->idxs_row[i], &c_ptr);
         assign_and_advance_int(ni[i], &mem->idxs_g[i], &c_ptr);
+        assign_and_advance_int(ni[i], &mem->idxh_prev[i], &c_ptr);
+        assign_and_advance_int(ni[i], &mem->idxg_prev[i], &c_ptr);
+        assign_and_advance_int(ni[i], &mem->idxs_g_prev[i], &c_ptr);
+        assign_and_advance_int(ni[i], &mem->sides_prev[i], &c_ptr);
     }
 
     // vector structs
@@ -585,6 +595,8 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
     mem->filter_size = 0;
     mem->policy_valid = 0;
     mem->timeout_estimated_per_iteration_time = 0;
+    mem->warm_started = 0;
+    mem->warm_rows_fresh = 0;
     mem->nlp_mem->status = ACADOS_READY;
 
     align_char_to(8, &c_ptr);
@@ -1167,6 +1179,76 @@ static int filterddp_classify_constraints(ocp_nlp_dims *dims, ocp_nlp_in *nlp_in
         }
     }
     return ACADOS_SUCCESS;
+}
+
+
+
+// bounded and soft sides of inequality row j of stage i: 1 lower bound, 2 upper bound, 4 soft lower, 8 soft upper
+static int filterddp_row_sides(ocp_nlp_filterddp_memory *mem, int i, int j)
+{
+    return (VEL(mem->maskgl+i, j) != 0.0) + 2*(VEL(mem->maskgu+i, j) != 0.0)
+            + 4*(VEL(mem->masksl+i, j) != 0.0) + 8*(VEL(mem->masksu+i, j) != 0.0);
+}
+
+
+
+// keep the classification of the last solve, whose update rules the warm start shifts, before the next
+// solve classifies the rows again with its bounds
+static void filterddp_save_classification(ocp_nlp_dims *dims, ocp_nlp_filterddp_memory *mem)
+{
+    for (int i = 0; i < dims->N; i++)
+    {
+        mem->nh_prev[i] = mem->nh[i];
+        mem->ng_prev[i] = mem->ng[i];
+        for (int j = 0; j < mem->nh[i]; j++)
+            mem->idxh_prev[i][j] = mem->idxh[i][j];
+        for (int j = 0; j < mem->ng[i]; j++)
+        {
+            mem->idxg_prev[i][j] = mem->idxg[i][j];
+            mem->idxs_g_prev[i][j] = mem->idxs_g[i][j];
+            mem->sides_prev[i][j] = filterddp_row_sides(mem, i, j);
+        }
+    }
+}
+
+
+
+// identity of constraint row idx of stage i across stages: the column of a bound, the position in g or in h,
+// so that a row keeps its identity when the stages have different numbers of rows, as h_0 and h often do
+static int filterddp_row_key(ocp_nlp_dims *dims, ocp_nlp_in *in, int i, int idx)
+{
+    ocp_nlp_constraints_bgh_dims *cdims = dims->constraints[i];
+    ocp_nlp_constraints_bgh_model *model = in->constraints[i];
+    int nux = dims->nu[i] + dims->nx[i];
+    if (idx < cdims->nb)
+        return model->idxb[idx];
+    if (idx < cdims->nb + cdims->ng)
+        return nux + idx - cdims->nb;
+    return nux + (1 << 20) + idx - cdims->nb - cdims->ng;
+}
+
+
+
+// 1 if stage i has the constraint rows of stage k of the previous solve, in the same order, with the same
+// bounded and soft sides and slack indices, so that the update rules of stage k apply to stage i row for row
+static int filterddp_rows_unchanged(ocp_nlp_dims *dims, ocp_nlp_in *in, ocp_nlp_filterddp_memory *mem, int i, int k)
+{
+    ocp_nlp_constraints_bgh_dims *cdims_i = dims->constraints[i];
+    ocp_nlp_constraints_bgh_dims *cdims_k = dims->constraints[k];
+    if (mem->nh[i] != mem->nh_prev[k] || mem->ng[i] != mem->ng_prev[k] || cdims_i->ns != cdims_k->ns)
+        return 0;
+    for (int j = 0; j < mem->nh[i]; j++)
+    {
+        if (filterddp_row_key(dims, in, i, mem->idxh[i][j]) != filterddp_row_key(dims, in, k, mem->idxh_prev[k][j]))
+            return 0;
+    }
+    for (int j = 0; j < mem->ng[i]; j++)
+    {
+        if (mem->idxs_g[i][j] != mem->idxs_g_prev[k][j] || filterddp_row_sides(mem, i, j) != mem->sides_prev[k][j]
+                || filterddp_row_key(dims, in, i, mem->idxg[i][j]) != filterddp_row_key(dims, in, k, mem->idxg_prev[k][j]))
+            return 0;
+    }
+    return 1;
 }
 
 
@@ -2416,8 +2498,11 @@ static int filterddp_shift_source(ocp_nlp_dims *dims, int i)
  * stage, u_i = u_{i+1} + alpha_{i+1} + beta_{i+1} (x_i - x_{i+1}), rolled out from the new initial state,
  * with the same rules for slacks and multipliers. A stage without a next stage of the same dimensions keeps its
  * own rule of the previous solve, evaluated at its new state: the last stage, and in a multi-phase OCP the
- * stages before a change of nx or nu, as the transition stage and the stage before it. Shifting between stages
- * of the same dimensions requires the same constraint rows, otherwise the solve starts cold.
+ * stages before a change of nx or nu, as the transition stage and the stage before it. The constraint rows may
+ * differ between stages and between solves (h_0 with fewer rows than h, phases with different constraints): each
+ * row takes the rule of the row with the same identity and the same bounded and soft sides at the source stage
+ * of the previous solve, and rows without one start as in a cold start, from their value at the rolled out point
+ * with the initial multipliers.
  */
 static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, ocp_nlp_in *in,
         ocp_nlp_out *out, ocp_nlp_out *trial, ocp_nlp_filterddp_opts *opts, ocp_nlp_filterddp_memory *mem,
@@ -2431,16 +2516,7 @@ static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, oc
     int *nu = dims->nu;
     const double dual_floor = 1e-3;
 
-    for (int i = 0; i < N-1; i++)
-    {
-        if (filterddp_shift_source(dims, i) == i)
-            continue;
-        if (mem->nh[i] != mem->nh[i+1] || mem->ng[i] != mem->ng[i+1])
-            return 0;
-        for (int j = 0; j < mem->ng[i]; j++)
-            if (mem->idxs_g[i][j] != mem->idxs_g[i+1][j])
-                return 0;
-    }
+    mem->warm_rows_fresh = 0;
 
     ocp_nlp_constraints_bgh_model *model0 = in->constraints[0];
     ocp_nlp_constraints_bgh_dims *cdims0 = dims->constraints[0];
@@ -2461,41 +2537,131 @@ static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, oc
         int ngi = mem->ng[i];
         int nux = nui+nxi;
         int nsi = ((ocp_nlp_constraints_bgh_dims *) dims->constraints[i])->ns;
+        int nsk = ((ocp_nlp_constraints_bgh_dims *) dims->constraints[k])->ns;
 
         for (int j = 0; j < nxi; j++)
             VEL(&work->xi, j) = VEL(trial->ux+i, nui+j) - VEL(out->ux+k, nui+j);
-        blasfeo_dveccp(2*nsi, out->ux+k, nux, trial->ux+i, nux);
+        if (nsi == nsk)
+            blasfeo_dveccp(2*nsi, out->ux+k, nux, trial->ux+i, nux);
+        else
+            blasfeo_dvecse(2*nsi, 0.0, trial->ux+i, nux);
         filterddp_apply_rule(nui, nxi, out->ux+k, 0, 1.0, mem->alpha_beta+k, &work->xi, trial->ux+i, 0);
-        filterddp_apply_rule(nhi, nxi, mem->phi+k, 0, 1.0, mem->psih_omegah+k, &work->xi, mem->phi_trial+i, 0);
         filterddp_apply_rule(nui, nxi, mem->zl+k, 0, 1.0, mem->chil_zetal+k, &work->xi, mem->zl_trial+i, 0);
         filterddp_apply_rule(nui, nxi, mem->zu+k, 0, 1.0, mem->chiu_zetau+k, &work->xi, mem->zu_trial+i, 0);
-        if (ngi > 0)
-        {
-            filterddp_apply_rule(ngi, nxi, mem->s+k, 0, 1.0, mem->alphas_betas+k, &work->xi, mem->s_trial+i, 0);
-            filterddp_apply_rule(ngi, nxi, mem->nu+k, 0, 1.0, mem->psig_omegag+k, &work->xi, mem->nu_trial+i, 0);
-            filterddp_apply_rule(ngi, nxi, mem->zsl+k, 0, 1.0, mem->chisl_zetasl+k, &work->xi, mem->zsl_trial+i, 0);
-            filterddp_apply_rule(ngi, nxi, mem->zsu+k, 0, 1.0, mem->chisu_zetasu+k, &work->xi, mem->zsu_trial+i, 0);
-            for (int j = 0; j < ngi; j++)
-            {
-                int is = mem->idxs_g[i][j];
-                if (VEL(mem->masksl+i, j) != 0.0)
-                {
-                    VEL(trial->ux+i, nux+is) = VEL(out->ux+k, nux+is) + filterddp_rule_value(nxi, mem->sigl_rule+k, j, &work->xi, 1.0);
-                    VEL(mem->xil_trial+i, j) = VEL(mem->xil+k, j) + filterddp_rule_value(nxi, mem->xil_rule+k, j, &work->xi, 1.0);
-                }
-                if (VEL(mem->masksu+i, j) != 0.0)
-                {
-                    VEL(trial->ux+i, nux+nsi+is) = VEL(out->ux+k, nux+nsi+is) + filterddp_rule_value(nxi, mem->sigu_rule+k, j, &work->xi, 1.0);
-                    VEL(mem->xiu_trial+i, j) = VEL(mem->xiu+k, j) + filterddp_rule_value(nxi, mem->xiu_rule+k, j, &work->xi, 1.0);
-                }
-            }
-        }
         for (int j = 0; j < nui; j++)
         {
             VEL(trial->ux+i, j) = filterddp_interior(VEL(trial->ux+i, j), VEL(mem->ul+i, j), VEL(mem->uu+i, j),
                     VEL(mem->maskul+i, j) != 0.0, VEL(mem->maskuu+i, j) != 0.0, opts->kappa_1, opts->kappa_2);
             VEL(mem->zl_trial+i, j) = filterddp_max(VEL(mem->zl_trial+i, j), dual_floor)*VEL(mem->maskul+i, j);
             VEL(mem->zu_trial+i, j) = filterddp_max(VEL(mem->zu_trial+i, j), dual_floor)*VEL(mem->maskuu+i, j);
+        }
+
+        if (filterddp_rows_unchanged(dims, in, mem, i, k))
+        {
+            // the rows of stage k of the previous solve: its rules apply as they are
+            filterddp_apply_rule(nhi, nxi, mem->phi+k, 0, 1.0, mem->psih_omegah+k, &work->xi, mem->phi_trial+i, 0);
+            if (ngi > 0)
+            {
+                filterddp_apply_rule(ngi, nxi, mem->s+k, 0, 1.0, mem->alphas_betas+k, &work->xi, mem->s_trial+i, 0);
+                filterddp_apply_rule(ngi, nxi, mem->nu+k, 0, 1.0, mem->psig_omegag+k, &work->xi, mem->nu_trial+i, 0);
+                filterddp_apply_rule(ngi, nxi, mem->zsl+k, 0, 1.0, mem->chisl_zetasl+k, &work->xi, mem->zsl_trial+i, 0);
+                filterddp_apply_rule(ngi, nxi, mem->zsu+k, 0, 1.0, mem->chisu_zetasu+k, &work->xi, mem->zsu_trial+i, 0);
+                for (int j = 0; j < ngi; j++)
+                {
+                    int is = mem->idxs_g[i][j];
+                    if (VEL(mem->masksl+i, j) != 0.0)
+                    {
+                        VEL(trial->ux+i, nux+is) = VEL(out->ux+k, nux+is) + filterddp_rule_value(nxi, mem->sigl_rule+k, j, &work->xi, 1.0);
+                        VEL(mem->xil_trial+i, j) = VEL(mem->xil+k, j) + filterddp_rule_value(nxi, mem->xil_rule+k, j, &work->xi, 1.0);
+                    }
+                    if (VEL(mem->masksu+i, j) != 0.0)
+                    {
+                        VEL(trial->ux+i, nux+nsi+is) = VEL(out->ux+k, nux+nsi+is) + filterddp_rule_value(nxi, mem->sigu_rule+k, j, &work->xi, 1.0);
+                        VEL(mem->xiu_trial+i, j) = VEL(mem->xiu+k, j) + filterddp_rule_value(nxi, mem->xiu_rule+k, j, &work->xi, 1.0);
+                    }
+                }
+            }
+        }
+        else
+        {
+            // equality rows: the shifted rule of the same row, zero multiplier for a new row
+            for (int j = 0; j < nhi; j++)
+            {
+                int key = filterddp_row_key(dims, in, i, mem->idxh[i][j]);
+                VEL(mem->phi_trial+i, j) = 0.0;
+                for (int jp = 0; jp < mem->nh_prev[k]; jp++)
+                {
+                    if (filterddp_row_key(dims, in, k, mem->idxh_prev[k][jp]) == key)
+                    {
+                        VEL(mem->phi_trial+i, j) = VEL(mem->phi+k, jp)
+                                + filterddp_rule_value(nxi, mem->psih_omegah+k, jp, &work->xi, 1.0);
+                        break;
+                    }
+                }
+            }
+
+            // inequality rows with the same identity and the same bounded and soft sides take the shifted rule,
+            // the others are marked with a NaN slack and initialized below
+            int nfresh = 0;
+            for (int j = 0; j < ngi; j++)
+            {
+                int key = filterddp_row_key(dims, in, i, mem->idxg[i][j]);
+                int sides = filterddp_row_sides(mem, i, j);
+                int jp = 0;
+                for (; jp < mem->ng_prev[k]; jp++)
+                {
+                    if (mem->sides_prev[k][jp] == sides && filterddp_row_key(dims, in, k, mem->idxg_prev[k][jp]) == key)
+                        break;
+                }
+                if (jp == mem->ng_prev[k])
+                {
+                    VEL(mem->s_trial+i, j) = NAN;
+                    nfresh++;
+                    continue;
+                }
+                VEL(mem->s_trial+i, j) = VEL(mem->s+k, jp) + filterddp_rule_value(nxi, mem->alphas_betas+k, jp, &work->xi, 1.0);
+                VEL(mem->nu_trial+i, j) = VEL(mem->nu+k, jp) + filterddp_rule_value(nxi, mem->psig_omegag+k, jp, &work->xi, 1.0);
+                VEL(mem->zsl_trial+i, j) = VEL(mem->zsl+k, jp) + filterddp_rule_value(nxi, mem->chisl_zetasl+k, jp, &work->xi, 1.0);
+                VEL(mem->zsu_trial+i, j) = VEL(mem->zsu+k, jp) + filterddp_rule_value(nxi, mem->chisu_zetasu+k, jp, &work->xi, 1.0);
+                int is = mem->idxs_g[i][j];
+                int isp = mem->idxs_g_prev[k][jp];
+                if (sides & 4)
+                {
+                    VEL(trial->ux+i, nux+is) = VEL(out->ux+k, nux+isp) + filterddp_rule_value(nxi, mem->sigl_rule+k, jp, &work->xi, 1.0);
+                    VEL(mem->xil_trial+i, j) = VEL(mem->xil+k, jp) + filterddp_rule_value(nxi, mem->xil_rule+k, jp, &work->xi, 1.0);
+                }
+                if (sides & 8)
+                {
+                    VEL(trial->ux+i, nux+nsi+is) = VEL(out->ux+k, nux+nsk+isp) + filterddp_rule_value(nxi, mem->sigu_rule+k, jp, &work->xi, 1.0);
+                    VEL(mem->xiu_trial+i, j) = VEL(mem->xiu+k, jp) + filterddp_rule_value(nxi, mem->xiu_rule+k, jp, &work->xi, 1.0);
+                }
+            }
+            if (nfresh > 0)
+            {
+                filterddp_evaluate_constraints_at(config, dims, in, nlp_opts, nlp_mem, nlp_work, trial, i);
+                ocp_nlp_constraints_bgh_memory *constr_mem = nlp_mem->constraints[i];
+                ocp_nlp_constraints_bgh_dims *cdims = dims->constraints[i];
+                for (int j = 0; j < ngi; j++)
+                {
+                    if (!isnan(VEL(mem->s_trial+i, j)))
+                        continue;
+                    int idx = mem->idxg[i][j];
+                    int is = mem->idxs_g[i][j];
+                    double value = idx < cdims->nb ? VEL(trial->ux+i, constr_mem->idxb[idx])
+                            : filterddp_row_value(dims, in, nlp_mem, mem, trial->ux+i, i, idx);
+                    if (VEL(mem->masksl+i, j) != 0.0)
+                        VEL(trial->ux+i, nux+is) = filterddp_max(VEL(mem->lsl+i, j), VEL(mem->gl+i, j)-value);
+                    if (VEL(mem->masksu+i, j) != 0.0)
+                        VEL(trial->ux+i, nux+nsi+is) = filterddp_max(VEL(mem->lsu+i, j), value-VEL(mem->gu+i, j));
+                    VEL(mem->s_trial+i, j) = value;
+                    VEL(mem->nu_trial+i, j) = 0.0;
+                    VEL(mem->zsl_trial+i, j) = opts->ineq_dual_init*VEL(mem->maskgl+i, j);
+                    VEL(mem->zsu_trial+i, j) = opts->ineq_dual_init*VEL(mem->maskgu+i, j);
+                    VEL(mem->xil_trial+i, j) = opts->ineq_dual_init*VEL(mem->masksl+i, j);
+                    VEL(mem->xiu_trial+i, j) = opts->ineq_dual_init*VEL(mem->masksu+i, j);
+                }
+                mem->warm_rows_fresh += nfresh;
+            }
         }
         for (int j = 0; j < ngi; j++)
         {
@@ -2658,6 +2824,8 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
 
     ocp_nlp_initialize_submodules(config, dims, nlp_in, nlp_out, nlp_opts, nlp_mem, nlp_work);
 
+    if (mem->policy_valid)
+        filterddp_save_classification(dims, mem);
     if (filterddp_classify_constraints(dims, nlp_in, mem) != ACADOS_SUCCESS)
     {
         nlp_mem->status = ACADOS_QP_FAILURE;
@@ -2709,8 +2877,10 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
     double mu_previous = mem->mu;
     int warm = opts->warm_start && mem->policy_valid
             && filterddp_shift_policy(config, dims, nlp_in, nlp_out, trial, opts, mem, work);
+    mem->warm_started = warm;
     if (!warm)
     {
+        mem->warm_rows_fresh = 0;
         filterddp_initialize_trajectory(config, dims, nlp_in, nlp_out, opts, mem, work);
     }
 
@@ -3127,6 +3297,16 @@ void ocp_nlp_filterddp_get(void *config_, void *dims_, void *mem_, const char *f
     {
         double *value = return_value_;
         *value = mem->reg_last;
+    }
+    else if (!strcmp("filterddp_warm_started", field))
+    {
+        int *value = return_value_;
+        *value = mem->warm_started;
+    }
+    else if (!strcmp("filterddp_warm_rows_fresh", field))
+    {
+        int *value = return_value_;
+        *value = mem->warm_rows_fresh;
     }
     else
     {

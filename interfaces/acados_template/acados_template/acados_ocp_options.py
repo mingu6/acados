@@ -2767,7 +2767,7 @@ class AcadosOcpOptions:
     @property
     def filterddp_warm_start(self):
         """
-        FILTERDDP: Initialize each solve from the affine policy of the previous solve, rolled out from the new initial state and shifted by one stage, and continue from its final barrier parameter. A stage whose next stage has other dimensions nx, nu keeps its own policy of the previous solve instead: the last stage, and in a multi-phase OCP the stages before a change of dimensions (the transition stage and the stage before it). Falls back to the initialization from the current iterate if there is no previous solve, consecutive stages of the same dimensions have different constraint rows, or the rollout fails.
+        FILTERDDP: Initialize each solve from the affine policy of the previous solve, rolled out from the new initial state and shifted by one stage, and continue from its final barrier parameter. A stage whose next stage has other dimensions nx, nu keeps its own policy of the previous solve instead: the last stage, and in a multi-phase OCP the stages before a change of dimensions (the transition stage and the stage before it). Constraint rows are matched by identity (bound index, or position in g or h) and bounded and soft sides, so the stages may have different rows (as h_0 and h); a row without a match at the source stage starts as in a cold start, from its value at the rolled out point with the initial multipliers. Falls back to the initialization from the current iterate if there is no previous solve or the rollout fails. The stats filterddp_warm_started and filterddp_warm_rows_fresh report whether the last solve was warm started and how many rows started fresh.
 
         Default: False
         """

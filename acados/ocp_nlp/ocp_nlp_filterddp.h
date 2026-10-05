@@ -137,6 +137,13 @@ typedef struct
     int **idxg;     // index in [bx; g; h] of each inequality row
     int **idxs_row; // slack index of each row in [bu; bx; g; h], -1 if hard
     int **idxs_g;   // slack index of each inequality row, -1 if hard
+    // classification of the solve whose update rules the warm start shifts
+    int *nh_prev;
+    int *ng_prev;
+    int **idxh_prev;
+    int **idxg_prev;
+    int **idxs_g_prev;
+    int **sides_prev; // per inequality row: 1 lower bound, 2 upper bound, 4 soft lower side, 8 soft upper side
 
     // bounds gathered per stage in solver order
     struct blasfeo_dvec *ul;    // control lower bounds
@@ -222,6 +229,8 @@ typedef struct
     int barrier_iter;
     int line_search_iter;
     int status_internal;
+    int warm_started;           // 1 if the last solve started from the shifted update rules
+    int warm_rows_fresh;        // constraint rows the shift had no previous rule for, initialized as in a cold start
 
     int ni_bounds;
 

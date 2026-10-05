@@ -1705,6 +1705,8 @@ class AcadosOcpSolver:
             - stat_n: number of columns in statistics matrix
             - residuals: residuals of current iterate
             - alpha: step sizes of SQP iterations
+            - filterddp_warm_started: FILTERDDP: 1 if the last solve started from the shifted policy of the previous solve
+            - filterddp_warm_rows_fresh: FILTERDDP: number of constraint rows the warm start had no previous rule for
         """
 
         if field_ == "time_solution_sens_lin":
@@ -1728,7 +1730,8 @@ class AcadosOcpSolver:
                   'time_feedback',
                   'qp_tau_iter',
         ]
-        int_fields = ['ddp_iter', 'sqp_iter', 'nlp_iter', 'stat_m', 'stat_n', 'qpscaling_status']
+        int_fields = ['ddp_iter', 'sqp_iter', 'nlp_iter', 'stat_m', 'stat_n', 'qpscaling_status',
+                      'filterddp_warm_started', 'filterddp_warm_rows_fresh']
         fields = double_fields + int_fields + [
                   'qp_stat',
                   'qp_iter',
