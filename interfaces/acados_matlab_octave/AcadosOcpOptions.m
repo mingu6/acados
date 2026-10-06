@@ -167,7 +167,6 @@ classdef AcadosOcpOptions < handle
         filterddp_gamma_L
         filterddp_theta_max_factor
         filterddp_theta_min_factor
-        filterddp_warm_start
         filterddp_policy_at_cap
         filterddp_symmetric_value_hessian
         filterddp_dynamics_multiplier
@@ -326,7 +325,6 @@ classdef AcadosOcpOptions < handle
             obj.filterddp_gamma_L = 1e-5;
             obj.filterddp_theta_max_factor = 1e6;
             obj.filterddp_theta_min_factor = 1e-4;
-            obj.filterddp_warm_start = false;
             obj.filterddp_policy_at_cap = 1;
             obj.filterddp_symmetric_value_hessian = 2;
             obj.filterddp_dynamics_multiplier = 0;

@@ -84,13 +84,13 @@ typedef struct
     double theta_max_factor;    // maximum constraint violation accepted by the filter, relative to initial
     double theta_min_factor;    // constraint violation threshold for the switching condition, relative to initial
 
-    int warm_start;             // 1: initialize each solve from the shifted affine policy and final barrier parameter of the previous solve
     int bound_mult_init_method; // initial bound multipliers and barrier parameter, as bound_mult_init_method of IPOPT:
                                 // 0 constant (default): ineq_dual_init and mu_init; 1 mu_based: centred, z = mu/d with
                                 // d the distance to the bound and mu from the multipliers of the last solve
-    int policy_at_cap;          // a solve stopped at max_iter leaves for the warm start 1 (default): the update rules
-                                // of an extra backward pass at the returned iterate; 0: those of the last backward
-                                // pass, shifted from the returned iterate with the feedforward not yet taken, 1 - step
+    int policy_at_cap;          // a solve stopped at max_iter leaves for ocp_nlp_filterddp_warm_start_from_policy
+                                // 1 (default): the update rules of an extra backward pass at the returned iterate;
+                                // 0: those of the last backward pass, applied from the returned iterate with the
+                                // feedforward not yet taken, 1 - step
     int symmetric_value_hessian; // value function Hessian recursion: 0: C + beta' B + omega' cx as computed,
                                  // 1: the same averaged with its transpose, 2 (default): the factored Schur complement
                                  // form C + (betaY' B + B' betaY) + betaY' H betaY - W' W, symmetric by construction
@@ -143,13 +143,6 @@ typedef struct
     int **idxg;     // index in [bx; g; h] of each inequality row
     int **idxs_row; // slack index of each row in [bu; bx; g; h], -1 if hard
     int **idxs_g;   // slack index of each inequality row, -1 if hard
-    // classification of the solve whose update rules the warm start shifts
-    int *nh_prev;
-    int *ng_prev;
-    int **idxh_prev;
-    int **idxg_prev;
-    int **idxs_g_prev;
-    int **sides_prev; // per inequality row: 1 lower bound, 2 upper bound, 4 soft lower side, 8 soft upper side
 
     // bounds gathered per stage in solver order
     struct blasfeo_dvec *ul;    // control lower bounds
@@ -237,9 +230,7 @@ typedef struct
     int barrier_iter;
     int line_search_iter;
     int status_internal;
-    int warm_started;           // 1 if the last solve started from the shifted update rules
     double policy_gamma;        // feedforward factor of the update rules left for the warm start
-    int warm_rows_fresh;        // constraint rows the shift had no previous rule for, initialized as in a cold start
 
     int ni_bounds;
 
