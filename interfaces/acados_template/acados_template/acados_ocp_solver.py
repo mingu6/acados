@@ -2473,7 +2473,8 @@ class AcadosOcpSolver:
                 'anderson_activation_threshold',
                 'levenberg_marquardt',
                 'adaptive_levenberg_marquardt_lam', 'adaptive_levenberg_marquardt_mu_min', 'adaptive_levenberg_marquardt_mu0',
-                'tau_min', 'filterddp_warm_start', 'filterddp_symmetric_value_hessian', 'filterddp_dynamics_multiplier',
+                'tau_min', 'filterddp_warm_start', 'filterddp_policy_at_cap', 'filterddp_symmetric_value_hessian',
+                'filterddp_dynamics_multiplier',
                 'filterddp_mu_init', 'filterddp_ineq_dual_init', 'filterddp_kappa_1', 'filterddp_kappa_2', 'filterddp_reg_1',
                 'filterddp_reg_min', 'filterddp_reg_max', 'filterddp_kappa_bar_w_p', 'filterddp_kappa_w_p', 'filterddp_kappa_w_m',
                 'filterddp_kappa_eps', 'filterddp_kappa_mu', 'filterddp_theta_mu', 'filterddp_tau_min', 'filterddp_s_max',
@@ -2504,6 +2505,7 @@ class AcadosOcpSolver:
                       'qp_print_level',
                       'qp_t0_init',
                       'filterddp_warm_start',
+                      'filterddp_policy_at_cap',
                       'filterddp_symmetric_value_hessian',
                       'filterddp_dynamics_multiplier']
         double_fields = ['globalization_fixed_step_length',

@@ -178,6 +178,7 @@ class AcadosOcpOptions:
         self.__filterddp_theta_max_factor = 1e6
         self.__filterddp_theta_min_factor = 1e-4
         self.__filterddp_warm_start = False
+        self.__filterddp_policy_at_cap = 1
         self.__filterddp_symmetric_value_hessian = 2
         self.__filterddp_dynamics_multiplier = 0
 
@@ -2779,6 +2780,25 @@ class AcadosOcpOptions:
             self.__filterddp_warm_start = filterddp_warm_start
         else:
             raise TypeError('Invalid filterddp_warm_start value. Expected bool.')
+
+    @property
+    def filterddp_policy_at_cap(self):
+        """
+        FILTERDDP: Affine policy a solve stopped at the iteration cap leaves for the warm start of the next solve.
+        1: the update rules of an extra backward pass at the returned iterate;
+        0: those of the last backward pass, which the last step took with the step size alpha: shifted from the returned iterate with the feedforward still to be taken, 1 - alpha. Saves the extra backward pass; the cost and the dynamics multipliers pi returned are then those of the iterate before the last step.
+        Solves stopped by convergence or timeout always leave the rules of the backward pass at the returned iterate.
+
+        Default: 1
+        """
+        return self.__filterddp_policy_at_cap
+
+    @filterddp_policy_at_cap.setter
+    def filterddp_policy_at_cap(self, filterddp_policy_at_cap):
+        if isinstance(filterddp_policy_at_cap, (bool, int)) and int(filterddp_policy_at_cap) in (0, 1):
+            self.__filterddp_policy_at_cap = int(filterddp_policy_at_cap)
+        else:
+            raise TypeError('Invalid filterddp_policy_at_cap value. Expected 0 or 1.')
 
     @property
     def filterddp_symmetric_value_hessian(self):

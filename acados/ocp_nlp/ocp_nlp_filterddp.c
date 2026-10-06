@@ -148,6 +148,7 @@ void ocp_nlp_filterddp_opts_initialize_default(void *config_, void *dims_, void 
     opts->theta_min_factor = 1e-4;
 
     opts->warm_start = 0;
+    opts->policy_at_cap = 1;
     opts->symmetric_value_hessian = 2;
     opts->dynamics_multiplier = 0;
 
@@ -283,6 +284,10 @@ void ocp_nlp_filterddp_opts_set(void *config_, void *opts_, const char *field, v
     else if (!strcmp(field, "filterddp_warm_start"))
     {
         opts->warm_start = *(int *) value;
+    }
+    else if (!strcmp(field, "filterddp_policy_at_cap"))
+    {
+        opts->policy_at_cap = *(int *) value;
     }
     else if (!strcmp(field, "filterddp_symmetric_value_hessian"))
     {
@@ -597,6 +602,7 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
     mem->timeout_estimated_per_iteration_time = 0;
     mem->warm_started = 0;
     mem->warm_rows_fresh = 0;
+    mem->policy_gamma = 1.0;
     mem->nlp_mem->status = ACADOS_READY;
 
     align_char_to(8, &c_ptr);
@@ -2515,6 +2521,7 @@ static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, oc
     int *nx = dims->nx;
     int *nu = dims->nu;
     const double dual_floor = 1e-3;
+    const double gamma = mem->policy_gamma;
 
     mem->warm_rows_fresh = 0;
 
@@ -2545,9 +2552,9 @@ static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, oc
             blasfeo_dveccp(2*nsi, out->ux+k, nux, trial->ux+i, nux);
         else
             blasfeo_dvecse(2*nsi, 0.0, trial->ux+i, nux);
-        filterddp_apply_rule(nui, nxi, out->ux+k, 0, 1.0, mem->alpha_beta+k, &work->xi, trial->ux+i, 0);
-        filterddp_apply_rule(nui, nxi, mem->zl+k, 0, 1.0, mem->chil_zetal+k, &work->xi, mem->zl_trial+i, 0);
-        filterddp_apply_rule(nui, nxi, mem->zu+k, 0, 1.0, mem->chiu_zetau+k, &work->xi, mem->zu_trial+i, 0);
+        filterddp_apply_rule(nui, nxi, out->ux+k, 0, gamma, mem->alpha_beta+k, &work->xi, trial->ux+i, 0);
+        filterddp_apply_rule(nui, nxi, mem->zl+k, 0, gamma, mem->chil_zetal+k, &work->xi, mem->zl_trial+i, 0);
+        filterddp_apply_rule(nui, nxi, mem->zu+k, 0, gamma, mem->chiu_zetau+k, &work->xi, mem->zu_trial+i, 0);
         for (int j = 0; j < nui; j++)
         {
             VEL(trial->ux+i, j) = filterddp_interior(VEL(trial->ux+i, j), VEL(mem->ul+i, j), VEL(mem->uu+i, j),
@@ -2559,25 +2566,25 @@ static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, oc
         if (filterddp_rows_unchanged(dims, in, mem, i, k))
         {
             // the rows of stage k of the previous solve: its rules apply as they are
-            filterddp_apply_rule(nhi, nxi, mem->phi+k, 0, 1.0, mem->psih_omegah+k, &work->xi, mem->phi_trial+i, 0);
+            filterddp_apply_rule(nhi, nxi, mem->phi+k, 0, gamma, mem->psih_omegah+k, &work->xi, mem->phi_trial+i, 0);
             if (ngi > 0)
             {
-                filterddp_apply_rule(ngi, nxi, mem->s+k, 0, 1.0, mem->alphas_betas+k, &work->xi, mem->s_trial+i, 0);
-                filterddp_apply_rule(ngi, nxi, mem->nu+k, 0, 1.0, mem->psig_omegag+k, &work->xi, mem->nu_trial+i, 0);
-                filterddp_apply_rule(ngi, nxi, mem->zsl+k, 0, 1.0, mem->chisl_zetasl+k, &work->xi, mem->zsl_trial+i, 0);
-                filterddp_apply_rule(ngi, nxi, mem->zsu+k, 0, 1.0, mem->chisu_zetasu+k, &work->xi, mem->zsu_trial+i, 0);
+                filterddp_apply_rule(ngi, nxi, mem->s+k, 0, gamma, mem->alphas_betas+k, &work->xi, mem->s_trial+i, 0);
+                filterddp_apply_rule(ngi, nxi, mem->nu+k, 0, gamma, mem->psig_omegag+k, &work->xi, mem->nu_trial+i, 0);
+                filterddp_apply_rule(ngi, nxi, mem->zsl+k, 0, gamma, mem->chisl_zetasl+k, &work->xi, mem->zsl_trial+i, 0);
+                filterddp_apply_rule(ngi, nxi, mem->zsu+k, 0, gamma, mem->chisu_zetasu+k, &work->xi, mem->zsu_trial+i, 0);
                 for (int j = 0; j < ngi; j++)
                 {
                     int is = mem->idxs_g[i][j];
                     if (VEL(mem->masksl+i, j) != 0.0)
                     {
-                        VEL(trial->ux+i, nux+is) = VEL(out->ux+k, nux+is) + filterddp_rule_value(nxi, mem->sigl_rule+k, j, &work->xi, 1.0);
-                        VEL(mem->xil_trial+i, j) = VEL(mem->xil+k, j) + filterddp_rule_value(nxi, mem->xil_rule+k, j, &work->xi, 1.0);
+                        VEL(trial->ux+i, nux+is) = VEL(out->ux+k, nux+is) + filterddp_rule_value(nxi, mem->sigl_rule+k, j, &work->xi, gamma);
+                        VEL(mem->xil_trial+i, j) = VEL(mem->xil+k, j) + filterddp_rule_value(nxi, mem->xil_rule+k, j, &work->xi, gamma);
                     }
                     if (VEL(mem->masksu+i, j) != 0.0)
                     {
-                        VEL(trial->ux+i, nux+nsi+is) = VEL(out->ux+k, nux+nsi+is) + filterddp_rule_value(nxi, mem->sigu_rule+k, j, &work->xi, 1.0);
-                        VEL(mem->xiu_trial+i, j) = VEL(mem->xiu+k, j) + filterddp_rule_value(nxi, mem->xiu_rule+k, j, &work->xi, 1.0);
+                        VEL(trial->ux+i, nux+nsi+is) = VEL(out->ux+k, nux+nsi+is) + filterddp_rule_value(nxi, mem->sigu_rule+k, j, &work->xi, gamma);
+                        VEL(mem->xiu_trial+i, j) = VEL(mem->xiu+k, j) + filterddp_rule_value(nxi, mem->xiu_rule+k, j, &work->xi, gamma);
                     }
                 }
             }
@@ -2594,7 +2601,7 @@ static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, oc
                     if (filterddp_row_key(dims, in, k, mem->idxh_prev[k][jp]) == key)
                     {
                         VEL(mem->phi_trial+i, j) = VEL(mem->phi+k, jp)
-                                + filterddp_rule_value(nxi, mem->psih_omegah+k, jp, &work->xi, 1.0);
+                                + filterddp_rule_value(nxi, mem->psih_omegah+k, jp, &work->xi, gamma);
                         break;
                     }
                 }
@@ -2619,21 +2626,21 @@ static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, oc
                     nfresh++;
                     continue;
                 }
-                VEL(mem->s_trial+i, j) = VEL(mem->s+k, jp) + filterddp_rule_value(nxi, mem->alphas_betas+k, jp, &work->xi, 1.0);
-                VEL(mem->nu_trial+i, j) = VEL(mem->nu+k, jp) + filterddp_rule_value(nxi, mem->psig_omegag+k, jp, &work->xi, 1.0);
-                VEL(mem->zsl_trial+i, j) = VEL(mem->zsl+k, jp) + filterddp_rule_value(nxi, mem->chisl_zetasl+k, jp, &work->xi, 1.0);
-                VEL(mem->zsu_trial+i, j) = VEL(mem->zsu+k, jp) + filterddp_rule_value(nxi, mem->chisu_zetasu+k, jp, &work->xi, 1.0);
+                VEL(mem->s_trial+i, j) = VEL(mem->s+k, jp) + filterddp_rule_value(nxi, mem->alphas_betas+k, jp, &work->xi, gamma);
+                VEL(mem->nu_trial+i, j) = VEL(mem->nu+k, jp) + filterddp_rule_value(nxi, mem->psig_omegag+k, jp, &work->xi, gamma);
+                VEL(mem->zsl_trial+i, j) = VEL(mem->zsl+k, jp) + filterddp_rule_value(nxi, mem->chisl_zetasl+k, jp, &work->xi, gamma);
+                VEL(mem->zsu_trial+i, j) = VEL(mem->zsu+k, jp) + filterddp_rule_value(nxi, mem->chisu_zetasu+k, jp, &work->xi, gamma);
                 int is = mem->idxs_g[i][j];
                 int isp = mem->idxs_g_prev[k][jp];
                 if (sides & 4)
                 {
-                    VEL(trial->ux+i, nux+is) = VEL(out->ux+k, nux+isp) + filterddp_rule_value(nxi, mem->sigl_rule+k, jp, &work->xi, 1.0);
-                    VEL(mem->xil_trial+i, j) = VEL(mem->xil+k, jp) + filterddp_rule_value(nxi, mem->xil_rule+k, jp, &work->xi, 1.0);
+                    VEL(trial->ux+i, nux+is) = VEL(out->ux+k, nux+isp) + filterddp_rule_value(nxi, mem->sigl_rule+k, jp, &work->xi, gamma);
+                    VEL(mem->xil_trial+i, j) = VEL(mem->xil+k, jp) + filterddp_rule_value(nxi, mem->xil_rule+k, jp, &work->xi, gamma);
                 }
                 if (sides & 8)
                 {
-                    VEL(trial->ux+i, nux+nsi+is) = VEL(out->ux+k, nux+nsk+isp) + filterddp_rule_value(nxi, mem->sigu_rule+k, jp, &work->xi, 1.0);
-                    VEL(mem->xiu_trial+i, j) = VEL(mem->xiu+k, jp) + filterddp_rule_value(nxi, mem->xiu_rule+k, jp, &work->xi, 1.0);
+                    VEL(trial->ux+i, nux+nsi+is) = VEL(out->ux+k, nux+nsk+isp) + filterddp_rule_value(nxi, mem->sigu_rule+k, jp, &work->xi, gamma);
+                    VEL(mem->xiu_trial+i, j) = VEL(mem->xiu+k, jp) + filterddp_rule_value(nxi, mem->xiu_rule+k, jp, &work->xi, gamma);
                 }
             }
             if (nfresh > 0)
@@ -3035,15 +3042,28 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
     }
 
     // a solve stopped by convergence or timeout leaves the update rules of the backward pass at the returned
-    // iterate, with the full feedforward still to be taken, which the warm start shifts as they are. A timeout
-    // never stops at the iteration cap, so the extra backward pass below does not add to its time.
+    // iterate, with the full feedforward still to be taken, which the warm start shifts as they are (factor 1).
+    // A timeout never stops at the iteration cap, so the extra backward pass below does not add to its time.
     int policy_valid = nlp_mem->status == ACADOS_SUCCESS || nlp_mem->status == ACADOS_TIMEOUT;
+    mem->policy_gamma = 1.0;
     if (iter == nlp_opts->max_iter)
     {
         nlp_mem->status = ACADOS_MAXITER;
-        // the update rules belong to the iterate before the last step; recompute them at the returned iterate
-        filterddp_backward_pass(config, dims, nlp_in, nlp_out, opts, mem, work);
-        policy_valid = mem->status_internal == FILTERDDP_STATUS_OK;
+        // the update rules belong to the iterate before the last step, which took the fraction step_size of
+        // their feedforward: u = ubar + step alpha + beta (x - xbar). Either recompute them at the returned
+        // iterate, or keep them: from the returned iterate, the rest of the step is (1 - step) alpha. Kept, the
+        // objective and the value gradient (pi) exported below are also those of the iterate before the last
+        // step. Without any step (max_iter 0) there are no rules of this solve to keep.
+        if (opts->policy_at_cap || iter == 0)
+        {
+            filterddp_backward_pass(config, dims, nlp_in, nlp_out, opts, mem, work);
+            policy_valid = mem->status_internal == FILTERDDP_STATUS_OK;
+        }
+        else
+        {
+            mem->policy_gamma = 1.0 - mem->step_size;
+            policy_valid = 1;
+        }
     }
     filterddp_restore_module_pointers(config, dims, nlp_mem, nlp_out);
     mem->policy_valid = policy_valid;

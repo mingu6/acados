@@ -85,6 +85,9 @@ typedef struct
     double theta_min_factor;    // constraint violation threshold for the switching condition, relative to initial
 
     int warm_start;             // 1: initialize each solve from the shifted affine policy and final barrier parameter of the previous solve
+    int policy_at_cap;          // a solve stopped at max_iter leaves for the warm start 1 (default): the update rules
+                                // of an extra backward pass at the returned iterate; 0: those of the last backward
+                                // pass, shifted from the returned iterate with the feedforward not yet taken, 1 - step
     int symmetric_value_hessian; // value function Hessian recursion: 0: C + beta' B + omega' cx as computed,
                                  // 1: the same averaged with its transpose, 2 (default): the factored Schur complement
                                  // form C + (betaY' B + B' betaY) + betaY' H betaY - W' W, symmetric by construction
@@ -230,6 +233,7 @@ typedef struct
     int line_search_iter;
     int status_internal;
     int warm_started;           // 1 if the last solve started from the shifted update rules
+    double policy_gamma;        // feedforward factor of the update rules left for the warm start
     int warm_rows_fresh;        // constraint rows the shift had no previous rule for, initialized as in a cold start
 
     int ni_bounds;

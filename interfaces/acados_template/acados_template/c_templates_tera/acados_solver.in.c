@@ -2818,6 +2818,8 @@ static void {{ name }}_acados_create_set_opts({{ name }}_solver_capsule* capsule
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_theta_min_factor", &filterddp_theta_min_factor);
     int filterddp_warm_start = {{ solver_options.filterddp_warm_start }};
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_warm_start", &filterddp_warm_start);
+    int filterddp_policy_at_cap = {{ solver_options.filterddp_policy_at_cap }};
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_policy_at_cap", &filterddp_policy_at_cap);
     int filterddp_symmetric_value_hessian = {{ solver_options.filterddp_symmetric_value_hessian }};
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_symmetric_value_hessian", &filterddp_symmetric_value_hessian);
     int filterddp_dynamics_multiplier = {{ solver_options.filterddp_dynamics_multiplier }};
