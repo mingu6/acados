@@ -3141,7 +3141,33 @@ void ocp_nlp_filterddp_memory_reset_qp_solver(void *config_, void *dims_, void *
     ocp_nlp_filterddp_workspace *work = work_;
     ocp_nlp_workspace *nlp_work = work->nlp_work;
 
+    // back to the state after creation: no warm start, and none of the values of earlier solves in the iterate,
+    // the update rules and the workspace, which are zero as allocated. Not all of BLASFEO's products with
+    // beta = 0 skip the output they overwrite (the edge kernels of dgemm_nd and dgemm_dn, all kernels of the
+    // generic target), so a NaN or inf a failed solve leaves there would otherwise reach every later solve.
+    int N = dims->N;
+    int nx_max, nu_max, ni_max;
+    filterddp_dims_max(dims, &nx_max, &nu_max, &ni_max);
+    // the data of the per stage vectors and matrices and of the costate, one block in memory_assign
+    char *start = (char *) mem->ul[0].mem;
+    char *end = (char *) mem->costate[N].mem + mem->costate[N].memsize;
+    memset(start, 0, end - start);
+    // the workspace after the nlp workspace, one block in cast_workspace; the factors forget their inverse diagonal
+    start = (char *) work->Vx.mem;
+    end = (char *) (work->ipiv + ni_max);
+    memset(start, 0, end - start);
+    work->Lchol.use_dA = 0;
+    work->LM.use_dA = 0;
+    work->AY_lu.use_dA = 0;
+
+    mem->mu = 0.0;
+    mem->filter_size = 0;
     mem->policy_valid = 0;
+    mem->timeout_estimated_per_iteration_time = 0;
+    mem->warm_started = 0;
+    mem->warm_rows_fresh = 0;
+    mem->policy_gamma = 1.0;
+
     config->qp_solver->memory_reset(qp_solver, dims->qp_solver,
         nlp_mem->qp_in, nlp_mem->qp_out, opts->nlp_opts->qp_solver_opts,
         nlp_mem->qp_solver_mem, nlp_work->qp_work);
