@@ -36,8 +36,10 @@ multi-phase examples:
 - time_varying/piecewiese_polynomial_control_example: piecewise polynomial controls of degree 0 and 4 on the
   pendulum (nu = 1, then nu = 5);
 - multiphase_nonlinear_constraints: two phases of the same dimensions, a nonlinear constraint in the second one.
-Checks the solution, the multipliers, the residuals and the value gradient. Then the transition example in
-closed loop: warm-started solves, whose shift crosses the change of dimensions, against cold-started solves.
+Checks the solution, the multipliers, the residuals and the value gradient. Then in closed loop, warm-started
+solves against cold-started solves: the transition example, whose shift crosses the change of dimensions, and
+the nonlinear constraints example with the constraint in phase 1 or in phase 0, whose shift crosses a change of
+the constraint rows.
 
 The tolerance is 1e-8, and 1e-10 for the comparison on the transition example, whose small acceleration
 cost determines the controls only weakly: at 1e-8 the controls of the two solvers differ by about 1e-4.
@@ -143,17 +145,29 @@ def polynomial_mocp(nlp_solver_type: str) -> AcadosMultiphaseOcp:
     return mocp
 
 
-def nonlinear_constraints_mocp(nlp_solver_type: str) -> AcadosMultiphaseOcp:
+def nonlinear_constraints_mocp(nlp_solver_type: str, warm_start: bool = False,
+                               constrained_phase: int = 1) -> AcadosMultiphaseOcp:
     """
     create_mocp of the multi-phase nonlinear constraints example with the velocity constraint of phase 1 hard
     and one-sided: the finite placeholder lower bound -1e9 of the example, needed for qpOASES only, keeps both
-    solvers from converging to tight tolerances.
+    solvers from converging to tight tolerances. With constrained_phase 0, phase 0 has a velocity constraint,
+    v >= -0.1, and phase 1 none.
     """
     ex = load('mp_nonlinear_constraints', 'multiphase_nonlinear_constraints/create_mocp.py')
     mocp = ex.create_mocp(soften_h=False, qp_solver='PARTIAL_CONDENSING_HPIPM')
-    mocp.constraints[1].lh = -ACADOS_INFTY*np.ones(1)
+    if constrained_phase == 0:
+        mocp.model[0].con_h_expr = mocp.model[0].x[1:]
+        mocp.constraints[0].lh = np.array([-0.1])
+        mocp.constraints[0].uh = np.array([ACADOS_INFTY])
+        mocp.model[1].con_h_expr = []
+        mocp.constraints[1].lh = np.array([])
+        mocp.constraints[1].uh = np.array([])
+    else:
+        mocp.constraints[1].lh = -ACADOS_INFTY*np.ones(1)
     set_options(mocp, nlp_solver_type)
-    mocp.name = f'mp_nonlinear_constraints_{nlp_solver_type.lower()}'
+    mocp.solver_options.filterddp_warm_start = warm_start
+    mocp.name = (f'mp_nonlinear_constraints_{nlp_solver_type.lower()}{"_ws" if warm_start else ""}'
+                 f'{"_phase0" if constrained_phase == 0 else ""}')
     return mocp
 
 
@@ -210,20 +224,20 @@ def compare_with_sqp(label: str, build) -> bool:
     return ok
 
 
-def closed_loop(n_steps: int = 30) -> bool:
+def closed_loop(label: str, build, x0: np.ndarray, rows_fresh: int, u_tol: float, n_steps: int = 30,
+                bounded_iterations: bool = False) -> bool:
     """
-    Receding horizon on the transition example, from the predicted next state: at every step the shift of the
-    warm start crosses the transition stage, where the stage before it and the transition stage keep their own
-    rules. The warm-started and the cold-started solves must converge to the same solutions, and no warm-started
-    solve may take more iterations than the first, cold, solve.
+    Receding horizon from the predicted next state, warm-started against cold-started solves. Every warm-started
+    solve after the first must start from the shifted policy (filterddp_warm_started), with rows_fresh constraint
+    rows that the shift has no rule for (filterddp_warm_rows_fresh), and converge to the solution of the
+    cold-started solve. With bounded_iterations, no warm-started solve may take more iterations than the first,
+    cold, solve.
     """
-    print('\ntransition example in closed loop: warm-started against cold-started solves')
-    ex = load('mocp_transition_main', 'mocp_transition_example/main.py')
-    warm = create_solver(transition_mocp('FILTERDDP', warm_start=True, tol=TOL))
-    cold = create_solver(transition_mocp('FILTERDDP', tol=TOL))
+    print(f'\n{label} in closed loop: warm-started against cold-started solves')
+    warm = create_solver(build('FILTERDDP', warm_start=True))
+    cold = create_solver(build('FILTERDDP'))
     N = warm.N
-    mu_init = warm.acados_ocp.solver_options.filterddp_mu_init
-    x0 = ex.X0.copy()
+    x0 = x0.copy()
     ok = True
     iters = {'warm': [], 'cold': []}
     error = 0.0
@@ -237,18 +251,19 @@ def closed_loop(n_steps: int = 30) -> bool:
                 print(f'FAIL {name} solve at step {step}: status {status}')
                 ok = False
         error = max(error, np.max(np.abs(trajectory(warm, 'u', range(N)) - trajectory(cold, 'u', range(N)))))
-        # the warm-started solves after the first continue from the previous barrier parameter
-        mu_0 = warm.get_stats('statistics')[5][0]
-        if step > 0 and not mu_0 < mu_init:
-            print(f'FAIL warm solve at step {step} started cold (mu {mu_0:.1e})')
+        warm_started = warm.get_stats('filterddp_warm_started')
+        fresh = warm.get_stats('filterddp_warm_rows_fresh')
+        if step > 0 and (warm_started != 1 or fresh != rows_fresh):
+            print(f'FAIL warm solve at step {step}: warm started {warm_started}, {fresh} fresh rows '
+                  f'(expected 1, {rows_fresh})')
             ok = False
         x0 = warm.get(1, 'x')
     for name in ('warm', 'cold'):
         print(f'     {name}: iterations first {iters[name][0]}, then mean {np.mean(iters[name][1:]):.1f}, '
               f'max {np.max(iters[name][1:])}')
-    # controls of magnitude up to 50, weakly determined at the tolerance 1e-8 (see above)
-    ok &= check('u warm against cold, all steps', error, 0.0, 1e-4)
-    ok &= np.max(iters['warm'][1:]) <= iters['warm'][0]
+    ok &= check('u warm against cold, all steps', error, 0.0, u_tol)
+    if bounded_iterations:
+        ok &= np.max(iters['warm'][1:]) <= iters['warm'][0]
     return ok
 
 
@@ -257,7 +272,20 @@ def main():
     ok &= compare_with_sqp('transition example: nx 2, transition stage nu 0, nx 1', transition_mocp)
     ok &= compare_with_sqp('piecewise polynomial controls: nu 1, nu 5', polynomial_mocp)
     ok &= compare_with_sqp('phase dependent nonlinear constraint', nonlinear_constraints_mocp)
-    ok &= closed_loop()
+    # the shift crosses the transition stage, where the stage before it and the transition stage keep their own
+    # rules; controls of magnitude up to 50, weakly determined at the tolerance 1e-8 (see above)
+    ex = load('mocp_transition_main', 'mocp_transition_example/main.py')
+    ok &= closed_loop('transition example', lambda t, warm_start=False: transition_mocp(t, warm_start, tol=TOL),
+                      ex.X0, rows_fresh=0, u_tol=1e-4, bounded_iterations=True)
+    # phases of the same dimensions with different constraint rows: the last stage of phase 0 takes the rules of
+    # the first stage of phase 1, whose velocity row it does not have, or, constrained in phase 0, without the
+    # velocity row it has, which starts fresh
+    x0 = np.array([1.0, 0.25])  # the initial state of create_mocp
+    ok &= closed_loop('nonlinear constraint in phase 1', nonlinear_constraints_mocp, x0, rows_fresh=0, u_tol=1e-6,
+                      n_steps=20)
+    ok &= closed_loop('nonlinear constraint in phase 0',
+                      lambda t, warm_start=False: nonlinear_constraints_mocp(t, warm_start, constrained_phase=0), x0,
+                      rows_fresh=1, u_tol=1e-6, n_steps=20)
     print('\nall checks passed' if ok else '\nsome checks FAILED')
     return 0 if ok else 1
 
