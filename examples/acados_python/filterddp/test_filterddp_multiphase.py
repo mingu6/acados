@@ -36,8 +36,8 @@ multi-phase examples:
 - time_varying/piecewiese_polynomial_control_example: piecewise polynomial controls of degree 0 and 4 on the
   pendulum (nu = 1, then nu = 5);
 - multiphase_nonlinear_constraints: two phases of the same dimensions, a nonlinear constraint in the second one.
-Checks the solution and the multipliers. Then the transition example in closed loop: warm-started solves,
-whose shift crosses the change of dimensions, against cold-started solves of the same OCPs.
+Checks the solution, the multipliers, the residuals and the value gradient. Then the transition example in
+closed loop: warm-started solves, whose shift crosses the change of dimensions, against cold-started solves.
 
 The tolerance is 1e-8, and 1e-10 for the comparison on the transition example, whose small acceleration
 cost determines the controls only weakly: at 1e-8 the controls of the two solvers differ by about 1e-4.
@@ -196,6 +196,9 @@ def compare_with_sqp(label: str, build) -> bool:
     ok &= check('pi', trajectory(ddp, 'pi', range(N)), trajectory(sqp, 'pi', range(N)), 1e-6)
     ok &= check('lam (upper - lower)', net_multipliers(ddp, range(N)), net_multipliers(sqp, range(N)), 1e-6)
     ok &= check('cost', ddp.get_cost(), sqp.get_cost(), 1e-8)
+    ok &= check('residuals (stat, eq, ineq, comp)', ddp.get_residuals(recompute=True), np.zeros(4), 1e-6)
+    ok &= check('value gradient', ddp.eval_and_get_optimal_value_gradient('initial_state'),
+                sqp.eval_and_get_optimal_value_gradient('initial_state'), 1e-6)
     # the feedback gains of the affine policy have the dimensions of their stage
     for stage in range(N):
         K = ddp.get_from_qp_in(stage, 'K')
