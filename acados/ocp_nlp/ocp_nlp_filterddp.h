@@ -206,7 +206,8 @@ typedef struct
     double *filter;
     int filter_size;
     int filter_capacity;
-    int policy_valid;
+    int policy_valid;           // 1: the update rules and the iterate in nlp_out are those of the last solve, from
+                                // which ocp_nlp_filterddp_warm_start_from_policy rolls out
 
     // iteration data
     double mu;
@@ -394,6 +395,9 @@ int ocp_nlp_filterddp_precompute(void *config_, void *dims_, void *nlp_in_, void
 void ocp_nlp_filterddp_get(void *config_, void *dims_, void *mem_, const char *field, void *return_value_);
 //
 void ocp_nlp_filterddp_get_at_stage(void *config_, void *dims_, void *mem_, int stage, const char *field, void *return_value_);
+//
+int ocp_nlp_filterddp_warm_start_from_policy(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
+                void *opts_, void *mem_, void *work_, double *x0);
 
 #ifdef __cplusplus
 } /* extern "C" */

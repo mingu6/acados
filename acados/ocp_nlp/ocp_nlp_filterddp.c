@@ -1189,6 +1189,58 @@ static int filterddp_classify_constraints(ocp_nlp_dims *dims, ocp_nlp_in *nlp_in
 
 
 
+// classification of the constraint rows and their bounds in solver order, from the current bounds of nlp_in
+static int filterddp_setup_bounds(ocp_nlp_dims *dims, ocp_nlp_in *nlp_in, ocp_nlp_filterddp_memory *mem)
+{
+    int status = filterddp_classify_constraints(dims, nlp_in, mem);
+    if (status != ACADOS_SUCCESS)
+        return status;
+
+    for (int i = 0; i < dims->N; i++)
+    {
+        ocp_nlp_constraints_bgh_model *model = nlp_in->constraints[i];
+        ocp_nlp_constraints_bgh_dims *cdims = dims->constraints[i];
+        int ni0 = filterddp_nrows(cdims);
+        blasfeo_dvecse(dims->nu[i], -INFINITY, mem->ul+i, 0);
+        blasfeo_dvecse(dims->nu[i], INFINITY, mem->uu+i, 0);
+        blasfeo_dvecse(dims->nu[i], 0.0, mem->maskul+i, 0);
+        blasfeo_dvecse(dims->nu[i], 0.0, mem->maskuu+i, 0);
+        for (int j = 0; j < cdims->nbu; j++)
+        {
+            int col = model->idxb[j];
+            if (mem->idxs_row[i][j] >= 0)
+                continue; // soft control bounds are inequality rows
+            if (VEL(nlp_in->dmask+i, j) != 0.0)
+            {
+                VEL(mem->ul+i, col) = VEL(&model->d, j);
+                VEL(mem->maskul+i, col) = 1.0;
+            }
+            if (VEL(nlp_in->dmask+i, ni0+j) != 0.0)
+            {
+                VEL(mem->uu+i, col) = VEL(&model->d, ni0+j);
+                VEL(mem->maskuu+i, col) = 1.0;
+            }
+        }
+        for (int j = 0; j < mem->ng[i]; j++)
+        {
+            int idx = mem->idxg[i][j];
+            int is = mem->idxs_g[i][j];
+            VEL(mem->maskgl+i, j) = VEL(nlp_in->dmask+i, idx) != 0.0 ? 1.0 : 0.0;
+            VEL(mem->maskgu+i, j) = VEL(nlp_in->dmask+i, ni0+idx) != 0.0 ? 1.0 : 0.0;
+            VEL(mem->gl+i, j) = VEL(mem->maskgl+i, j) != 0.0 ? VEL(&model->d, idx) : -INFINITY;
+            VEL(mem->gu+i, j) = VEL(mem->maskgu+i, j) != 0.0 ? VEL(&model->d, ni0+idx) : INFINITY;
+            // the slacks of soft rows relax the bounded sides, sig >= ls from the slack bounds of d
+            VEL(mem->masksl+i, j) = (is >= 0 && VEL(mem->maskgl+i, j) != 0.0) ? 1.0 : 0.0;
+            VEL(mem->masksu+i, j) = (is >= 0 && VEL(mem->maskgu+i, j) != 0.0) ? 1.0 : 0.0;
+            VEL(mem->lsl+i, j) = is >= 0 ? VEL(&model->d, 2*ni0+is) : 0.0;
+            VEL(mem->lsu+i, j) = is >= 0 ? VEL(&model->d, 2*ni0+cdims->ns+is) : 0.0;
+        }
+    }
+    return ACADOS_SUCCESS;
+}
+
+
+
 // bounded and soft sides of inequality row j of stage i: 1 lower bound, 2 upper bound, 4 soft lower, 8 soft upper
 static int filterddp_row_sides(ocp_nlp_filterddp_memory *mem, int i, int j)
 {
@@ -2820,8 +2872,6 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
     ocp_nlp_workspace *nlp_work = work->nlp_work;
     ocp_nlp_out *trial = nlp_work->tmp_nlp_out;
 
-    int N = dims->N;
-
     ocp_nlp_timings_reset(nlp_timings);
 
 #if defined(ACADOS_WITH_OPENMP)
@@ -2833,52 +2883,11 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
 
     if (mem->policy_valid)
         filterddp_save_classification(dims, mem);
-    if (filterddp_classify_constraints(dims, nlp_in, mem) != ACADOS_SUCCESS)
+    if (filterddp_setup_bounds(dims, nlp_in, mem) != ACADOS_SUCCESS)
     {
         nlp_mem->status = ACADOS_QP_FAILURE;
         nlp_timings->time_tot = acados_toc(&timer0);
         return nlp_mem->status;
-    }
-
-    for (int i = 0; i < N; i++)
-    {
-        ocp_nlp_constraints_bgh_model *model = nlp_in->constraints[i];
-        ocp_nlp_constraints_bgh_dims *cdims = dims->constraints[i];
-        int ni0 = filterddp_nrows(cdims);
-        blasfeo_dvecse(dims->nu[i], -INFINITY, mem->ul+i, 0);
-        blasfeo_dvecse(dims->nu[i], INFINITY, mem->uu+i, 0);
-        blasfeo_dvecse(dims->nu[i], 0.0, mem->maskul+i, 0);
-        blasfeo_dvecse(dims->nu[i], 0.0, mem->maskuu+i, 0);
-        for (int j = 0; j < cdims->nbu; j++)
-        {
-            int col = model->idxb[j];
-            if (mem->idxs_row[i][j] >= 0)
-                continue; // soft control bounds are inequality rows
-            if (VEL(nlp_in->dmask+i, j) != 0.0)
-            {
-                VEL(mem->ul+i, col) = VEL(&model->d, j);
-                VEL(mem->maskul+i, col) = 1.0;
-            }
-            if (VEL(nlp_in->dmask+i, ni0+j) != 0.0)
-            {
-                VEL(mem->uu+i, col) = VEL(&model->d, ni0+j);
-                VEL(mem->maskuu+i, col) = 1.0;
-            }
-        }
-        for (int j = 0; j < mem->ng[i]; j++)
-        {
-            int idx = mem->idxg[i][j];
-            int is = mem->idxs_g[i][j];
-            VEL(mem->maskgl+i, j) = VEL(nlp_in->dmask+i, idx) != 0.0 ? 1.0 : 0.0;
-            VEL(mem->maskgu+i, j) = VEL(nlp_in->dmask+i, ni0+idx) != 0.0 ? 1.0 : 0.0;
-            VEL(mem->gl+i, j) = VEL(mem->maskgl+i, j) != 0.0 ? VEL(&model->d, idx) : -INFINITY;
-            VEL(mem->gu+i, j) = VEL(mem->maskgu+i, j) != 0.0 ? VEL(&model->d, ni0+idx) : INFINITY;
-            // the slacks of soft rows relax the bounded sides, sig >= ls from the slack bounds of d
-            VEL(mem->masksl+i, j) = (is >= 0 && VEL(mem->maskgl+i, j) != 0.0) ? 1.0 : 0.0;
-            VEL(mem->masksu+i, j) = (is >= 0 && VEL(mem->maskgu+i, j) != 0.0) ? 1.0 : 0.0;
-            VEL(mem->lsl+i, j) = is >= 0 ? VEL(&model->d, 2*ni0+is) : 0.0;
-            VEL(mem->lsu+i, j) = is >= 0 ? VEL(&model->d, 2*ni0+cdims->ns+is) : 0.0;
-        }
     }
 
     double mu_previous = mem->mu;
@@ -3091,6 +3100,85 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
     nlp_timings->time_tot = acados_toc(&timer0);
 
     return nlp_mem->status;
+}
+
+
+
+/*
+ * Warm start of the next solve from the affine policy of the last solve, in closed loop from the new initial state
+ * x0: stage i takes the update rule of stage k = filterddp_shift_source(i) of the last solve, the next stage (the
+ * rules shifted by one stage) or its own,
+ *     u_i = ubar_k + gamma alpha_k + beta_k (x_i - xbar_k),   x_{i+1} = f(x_i, u_i),
+ * from x_0 = x0, with (xbar, ubar) the iterate of the last solve, gamma the feedforward still to be taken
+ * (policy_gamma) and the controls pushed into the interior of their bounds as in the initialization of a solve. The
+ * rollout replaces x and u of the iterate in nlp_out; the next solve initializes from these controls as from any
+ * initial guess: it rolls them out from its initial state bound and sets the slacks and multipliers there. Set the
+ * bounds and parameters of the next solve before this call, as the rollout uses them. Returns ACADOS_SUCCESS,
+ * ACADOS_READY without a policy to take (no solve since the creation or the last reset, a failed last solve, or a
+ * policy already taken), ACADOS_NAN_DETECTED if the rollout is not finite and ACADOS_QP_FAILURE if the constraints
+ * cannot be classified; on failure nlp_out is unchanged.
+ */
+int ocp_nlp_filterddp_warm_start_from_policy(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
+                void *opts_, void *mem_, void *work_, double *x0)
+{
+    ocp_nlp_dims *dims = dims_;
+    ocp_nlp_config *config = config_;
+    ocp_nlp_filterddp_opts *opts = opts_;
+    ocp_nlp_opts *nlp_opts = opts->nlp_opts;
+    ocp_nlp_filterddp_memory *mem = mem_;
+    ocp_nlp_in *nlp_in = nlp_in_;
+    ocp_nlp_out *nlp_out = nlp_out_;
+    ocp_nlp_memory *nlp_mem = mem->nlp_mem;
+    ocp_nlp_filterddp_workspace *work = work_;
+    ocp_nlp_workspace *nlp_work = work->nlp_work;
+    ocp_nlp_out *trial = nlp_work->tmp_nlp_out;
+
+    int N = dims->N;
+    int *nx = dims->nx;
+    int *nu = dims->nu;
+    const double gamma = mem->policy_gamma;
+
+    if (!mem->policy_valid)
+        return ACADOS_READY;
+
+    ocp_nlp_initialize_submodules(config, dims, nlp_in, nlp_out, nlp_opts, nlp_mem, nlp_work);
+    int status = filterddp_setup_bounds(dims, nlp_in, mem);
+    if (status != ACADOS_SUCCESS)
+        return status;
+
+    blasfeo_pack_dvec(nx[0], x0, 1, trial->ux+0, nu[0]);
+    int ok = filterddp_all_finite(nx[0], trial->ux+0, nu[0]);
+    for (int i = 0; i < N && ok; i++)
+    {
+        int k = filterddp_shift_source(dims, i);
+        for (int j = 0; j < nx[i]; j++)
+            VEL(&work->xi, j) = VEL(trial->ux+i, nu[i]+j) - VEL(nlp_out->ux+k, nu[i]+j);
+        filterddp_apply_rule(nu[i], nx[i], nlp_out->ux+k, 0, gamma, mem->alpha_beta+k, &work->xi, trial->ux+i, 0);
+        for (int j = 0; j < nu[i]; j++)
+        {
+            VEL(trial->ux+i, j) = filterddp_interior(VEL(trial->ux+i, j), VEL(mem->ul+i, j), VEL(mem->uu+i, j),
+                    VEL(mem->maskul+i, j) != 0.0, VEL(mem->maskuu+i, j) != 0.0, opts->kappa_1, opts->kappa_2);
+        }
+        if (!filterddp_all_finite(nu[i], trial->ux+i, 0))
+        {
+            ok = 0;
+            break;
+        }
+        // the dynamics module computes fun = f(x,u) - x_next with x_next taken from nlp_out
+        filterddp_evaluate_dynamics_at(config, dims, nlp_in, nlp_opts, nlp_mem, nlp_work, trial, i);
+        struct blasfeo_dvec *fun = config->dynamics[i]->memory_get_fun_ptr(nlp_mem->dynamics[i]);
+        blasfeo_daxpy(nx[i+1], 1.0, fun, 0, nlp_out->ux+i+1, nu[i+1], trial->ux+i+1, nu[i+1]);
+        ok = filterddp_all_finite(nx[i+1], trial->ux+i+1, nu[i+1]);
+    }
+    filterddp_restore_module_pointers(config, dims, nlp_mem, nlp_out);
+    if (!ok)
+        return ACADOS_NAN_DETECTED;
+
+    for (int i = 0; i <= N; i++)
+        blasfeo_dveccp(nu[i]+nx[i], trial->ux+i, 0, nlp_out->ux+i, 0);
+    // the iterate is no longer the one of the update rules
+    mem->policy_valid = 0;
+    return ACADOS_SUCCESS;
 }
 
 

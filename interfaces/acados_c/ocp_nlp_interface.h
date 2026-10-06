@@ -395,6 +395,18 @@ ACADOS_SYMBOL_EXPORT int ocp_nlp_solve(ocp_nlp_solver *solver, ocp_nlp_in *nlp_i
 ACADOS_SYMBOL_EXPORT int ocp_nlp_setup_qp_matrices_and_factorize(ocp_nlp_solver *solver, ocp_nlp_in *nlp_in, ocp_nlp_out *nlp_out);
 
 
+/// FILTERDDP only: warm start of the next solve, the closed-loop rollout from x0 of the affine policy of the last
+/// solve, shifted by one stage, written into the primal iterate (x, u) of nlp_out, from which the next solve
+/// initializes. See ocp_nlp_filterddp_warm_start_from_policy.
+///
+/// \param solver The solver struct.
+/// \param nlp_in The inputs struct.
+/// \param nlp_out The output struct.
+/// \param x0 The initial state of the next solve.
+/// \return ACADOS_SUCCESS, or the reason why nlp_out is unchanged.
+ACADOS_SYMBOL_EXPORT int ocp_nlp_warm_start_from_policy(ocp_nlp_solver *solver, ocp_nlp_in *nlp_in, ocp_nlp_out *nlp_out, double *x0);
+
+
 
 /// Resets the memory of the QP solver
 ///

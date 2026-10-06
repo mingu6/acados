@@ -1470,6 +1470,18 @@ int ocp_nlp_setup_qp_matrices_and_factorize(ocp_nlp_solver *solver, ocp_nlp_in *
 }
 
 
+int ocp_nlp_warm_start_from_policy(ocp_nlp_solver *solver, ocp_nlp_in *nlp_in, ocp_nlp_out *nlp_out, double *x0)
+{
+    if (solver->config->evaluate != &ocp_nlp_filterddp)
+    {
+        printf("\nocp_nlp_warm_start_from_policy: only implemented for the FILTERDDP solver.\n");
+        return ACADOS_UNKNOWN;
+    }
+    return ocp_nlp_filterddp_warm_start_from_policy(solver->config, solver->dims, nlp_in, nlp_out,
+                                    solver->opts, solver->mem, solver->work, x0);
+}
+
+
 int ocp_nlp_precompute(ocp_nlp_solver *solver, ocp_nlp_in *nlp_in, ocp_nlp_out *nlp_out)
 {
     return solver->config->precompute(solver->config, solver->dims, nlp_in, nlp_out,
