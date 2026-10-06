@@ -423,9 +423,6 @@ class AcadosMultiphaseOcp:
 
     def make_consistent(self, verbose: bool = True) -> None:
 
-        if self.solver_options.nlp_solver_type == 'FILTERDDP':
-            raise NotImplementedError('FILTERDDP solver does not support multi-phase OCPs.')
-
         self.N_horizon = sum(self.N_list)
         self.solver_options.N_horizon = self.N_horizon # NOTE: to not change options when making ocp consistent
 

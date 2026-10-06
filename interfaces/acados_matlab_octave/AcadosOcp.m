@@ -1462,10 +1462,11 @@ classdef AcadosOcp < handle
                 if ~strcmp(opts.globalization, "FIXED_STEP")
                     error('FILTERDDP solver uses its own filter line search, set globalization == FIXED_STEP.');
                 end
-                if dims.nbx_0 ~= dims.nx || dims.nbxe_0 ~= dims.nx
+                % in a multi-phase OCP the initial stage belongs to the first phase, the terminal stage to the last
+                if (isempty(mocp_info) || mocp_info.phase_idx == 0) && (dims.nbx_0 ~= dims.nx || dims.nbxe_0 ~= dims.nx)
                     error('FILTERDDP solver requires the initial state to be fixed, set constraints.x0.');
                 end
-                if any([dims.nbx_e, dims.ng_e, dims.nphi_e, dims.nh_e])
+                if (isempty(mocp_info) || mocp_info.phase_idx == mocp_info.n_phases - 1) && any([dims.nbx_e, dims.ng_e, dims.nphi_e, dims.nh_e])
                     error('FILTERDDP solver does not support terminal constraints.')
                 end
                 if any([dims.nphi, dims.nphi_0, dims.nz])

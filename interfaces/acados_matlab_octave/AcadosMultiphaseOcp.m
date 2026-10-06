@@ -147,10 +147,6 @@ classdef AcadosMultiphaseOcp < handle
 
         function make_consistent(self)
 
-            if strcmp(self.solver_options.nlp_solver_type, 'FILTERDDP')
-                error('FILTERDDP solver does not support multi-phase OCPs.');
-            end
-
             % check options
             self.mocp_opts.make_consistent(self.solver_options, self.n_phases);
 

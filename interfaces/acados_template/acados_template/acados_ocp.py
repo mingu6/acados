@@ -1386,9 +1386,10 @@ class AcadosOcp:
                 raise NotImplementedError('FILTERDDP solver evaluates the cost separately from the dynamics, use cost_discretization == EULER.')
             if opts.regularize_method != "NO_REGULARIZE":
                 raise NotImplementedError('FILTERDDP solver performs its own inertia correction, use regularize_method == NO_REGULARIZE.')
-            if dims.nbx_0 != dims.nx or dims.nbxe_0 != dims.nx:
+            # in a multi-phase OCP the initial stage belongs to the first phase, the terminal stage to the last
+            if (mocp_info is None or mocp_info['phase_idx'] == 0) and (dims.nbx_0 != dims.nx or dims.nbxe_0 != dims.nx):
                 raise ValueError('FILTERDDP solver requires the initial state to be fixed, set constraints.x0.')
-            if any([dims.nbx_e, dims.ng_e, dims.nphi_e, dims.nh_e]):
+            if (mocp_info is None or mocp_info['phase_idx'] == mocp_info['n_phases'] - 1) and any([dims.nbx_e, dims.ng_e, dims.nphi_e, dims.nh_e]):
                 raise ValueError('FILTERDDP solver does not support terminal constraints.')
             if any([dims.nphi, dims.nphi_0]):
                 raise NotImplementedError('FILTERDDP solver does not support BGP constraints.')

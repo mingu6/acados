@@ -2546,6 +2546,63 @@ bool allow_direction_mode_switch_to_nominal = {{ solver_options.allow_direction_
 ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "allow_direction_mode_switch_to_nominal", &allow_direction_mode_switch_to_nominal);
 {%- endif %}
 
+{% if solver_options.nlp_solver_type == "FILTERDDP" %}
+    // set FILTERDDP specific options; the e0 suffix keeps integer-valued doubles, which the renderer
+    // prints without a decimal point (reg_max = 1e40 as 1 and 40 zeros), valid double literals
+    double filterddp_mu_init = {{ solver_options.filterddp_mu_init }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_mu_init", &filterddp_mu_init);
+    double filterddp_ineq_dual_init = {{ solver_options.filterddp_ineq_dual_init }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_ineq_dual_init", &filterddp_ineq_dual_init);
+    double filterddp_kappa_1 = {{ solver_options.filterddp_kappa_1 }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_1", &filterddp_kappa_1);
+    double filterddp_kappa_2 = {{ solver_options.filterddp_kappa_2 }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_2", &filterddp_kappa_2);
+    double filterddp_reg_1 = {{ solver_options.filterddp_reg_1 }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_reg_1", &filterddp_reg_1);
+    double filterddp_reg_min = {{ solver_options.filterddp_reg_min }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_reg_min", &filterddp_reg_min);
+    double filterddp_reg_max = {{ solver_options.filterddp_reg_max }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_reg_max", &filterddp_reg_max);
+    double filterddp_kappa_bar_w_p = {{ solver_options.filterddp_kappa_bar_w_p }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_bar_w_p", &filterddp_kappa_bar_w_p);
+    double filterddp_kappa_w_p = {{ solver_options.filterddp_kappa_w_p }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_w_p", &filterddp_kappa_w_p);
+    double filterddp_kappa_w_m = {{ solver_options.filterddp_kappa_w_m }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_w_m", &filterddp_kappa_w_m);
+    double filterddp_kappa_eps = {{ solver_options.filterddp_kappa_eps }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_eps", &filterddp_kappa_eps);
+    double filterddp_kappa_mu = {{ solver_options.filterddp_kappa_mu }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_kappa_mu", &filterddp_kappa_mu);
+    double filterddp_theta_mu = {{ solver_options.filterddp_theta_mu }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_theta_mu", &filterddp_theta_mu);
+    double filterddp_tau_min = {{ solver_options.filterddp_tau_min }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_tau_min", &filterddp_tau_min);
+    double filterddp_s_max = {{ solver_options.filterddp_s_max }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_s_max", &filterddp_s_max);
+    double filterddp_eta_L = {{ solver_options.filterddp_eta_L }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_eta_L", &filterddp_eta_L);
+    double filterddp_s_L = {{ solver_options.filterddp_s_L }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_s_L", &filterddp_s_L);
+    double filterddp_delta = {{ solver_options.filterddp_delta }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_delta", &filterddp_delta);
+    double filterddp_s_theta = {{ solver_options.filterddp_s_theta }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_s_theta", &filterddp_s_theta);
+    double filterddp_gamma_theta = {{ solver_options.filterddp_gamma_theta }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_gamma_theta", &filterddp_gamma_theta);
+    double filterddp_gamma_L = {{ solver_options.filterddp_gamma_L }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_gamma_L", &filterddp_gamma_L);
+    double filterddp_theta_max_factor = {{ solver_options.filterddp_theta_max_factor }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_theta_max_factor", &filterddp_theta_max_factor);
+    double filterddp_theta_min_factor = {{ solver_options.filterddp_theta_min_factor }}e0;
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_theta_min_factor", &filterddp_theta_min_factor);
+    int filterddp_warm_start = {{ solver_options.filterddp_warm_start }};
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_warm_start", &filterddp_warm_start);
+    int filterddp_symmetric_value_hessian = {{ solver_options.filterddp_symmetric_value_hessian }};
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_symmetric_value_hessian", &filterddp_symmetric_value_hessian);
+    int filterddp_dynamics_multiplier = {{ solver_options.filterddp_dynamics_multiplier }};
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_dynamics_multiplier", &filterddp_dynamics_multiplier);
+{%- endif %}
+
 {% if solver_options.nlp_solver_type == "SQP" or solver_options.nlp_solver_type == "DDP" or solver_options.nlp_solver_type == "SQP_WITH_FEASIBLE_QP" or solver_options.nlp_solver_type == "FILTERDDP" %}
     // set SQP specific options
     double nlp_solver_tol_stat = {{ solver_options.nlp_solver_tol_stat }};
@@ -3038,15 +3095,17 @@ void {{ name }}_acados_print_stats({{ name }}_solver_capsule* capsule)
     ocp_nlp_get(capsule->nlp_solver, "stat_m", &stat_m);
 
 {% set stat_n_max = 12 %}
-    double stat[{{ solver_options.nlp_solver_max_iter * stat_n_max }}];
+    double stat[{{ (solver_options.nlp_solver_max_iter + 1) * stat_n_max }}];
     ocp_nlp_get(capsule->nlp_solver, "statistics", stat);
 
     int nrow = sqp_iter+1 < stat_m ? sqp_iter+1 : stat_m;
 
+{%- if solver_options.nlp_solver_type != "FILTERDDP" %}
     printf("iter\tres_stat\tres_eq\t\tres_ineq\tres_comp\tqp_stat\tqp_iter\talpha");
     if (stat_n > 8)
         printf("\t\tqp_res_stat\tqp_res_eq\tqp_res_ineq\tqp_res_comp");
     printf("\n");
+{%- endif %}
 
 {%- if solver_options.nlp_solver_type == "SQP" %}
 
@@ -3055,6 +3114,24 @@ void {{ name }}_acados_print_stats({{ name }}_solver_capsule* capsule)
         for (int j = 0; j < stat_n + 1; j++)
         {
             if (j == 0 || j == 5 || j == 6)
+            {
+                tmp_int = (int) stat[i + j * nrow];
+                printf("%d\t", tmp_int);
+            }
+            else
+            {
+                printf("%e\t", stat[i + j * nrow]);
+            }
+        }
+        printf("\n");
+    }
+{%- elif solver_options.nlp_solver_type == "FILTERDDP" %}
+    printf("iter\tdu_inf\t\tpr_inf\t\tcs_inf\t\tobjective\tmu\t\treg\t\talpha\t\tls\n");
+    for (int i = 0; i < nrow; i++)
+    {
+        for (int j = 0; j < stat_n + 1; j++)
+        {
+            if (j == 0 || j == 8)
             {
                 tmp_int = (int) stat[i + j * nrow];
                 printf("%d\t", tmp_int);
