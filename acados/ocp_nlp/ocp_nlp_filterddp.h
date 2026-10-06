@@ -85,6 +85,9 @@ typedef struct
     double theta_min_factor;    // constraint violation threshold for the switching condition, relative to initial
 
     int warm_start;             // 1: initialize each solve from the shifted affine policy and final barrier parameter of the previous solve
+    int bound_mult_init_method; // initial bound multipliers and barrier parameter, as bound_mult_init_method of IPOPT:
+                                // 0 constant (default): ineq_dual_init and mu_init; 1 mu_based: centred, z = mu/d with
+                                // d the distance to the bound and mu from the multipliers of the last solve
     int policy_at_cap;          // a solve stopped at max_iter leaves for the warm start 1 (default): the update rules
                                 // of an extra backward pass at the returned iterate; 0: those of the last backward
                                 // pass, shifted from the returned iterate with the feedforward not yet taken, 1 - step
@@ -208,6 +211,7 @@ typedef struct
     int filter_capacity;
     int policy_valid;           // 1: the update rules and the iterate in nlp_out are those of the last solve, from
                                 // which ocp_nlp_filterddp_warm_start_from_policy rolls out
+    int duals_valid;            // 1: the bound multipliers in memory are those of the last solve, which left a policy
 
     // iteration data
     double mu;

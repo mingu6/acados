@@ -148,6 +148,7 @@ void ocp_nlp_filterddp_opts_initialize_default(void *config_, void *dims_, void 
     opts->theta_min_factor = 1e-4;
 
     opts->warm_start = 0;
+    opts->bound_mult_init_method = 0;
     opts->policy_at_cap = 1;
     opts->symmetric_value_hessian = 2;
     opts->dynamics_multiplier = 0;
@@ -284,6 +285,16 @@ void ocp_nlp_filterddp_opts_set(void *config_, void *opts_, const char *field, v
     else if (!strcmp(field, "filterddp_warm_start"))
     {
         opts->warm_start = *(int *) value;
+    }
+    else if (!strcmp(field, "filterddp_bound_mult_init_method"))
+    {
+        int method = *(int *) value;
+        if (method != 0 && method != 1)
+        {
+            printf("\nerror: ocp_nlp_filterddp_opts_set: filterddp_bound_mult_init_method must be 0 (constant) or 1 (mu_based), got %d.\n", method);
+            exit(1);
+        }
+        opts->bound_mult_init_method = method;
     }
     else if (!strcmp(field, "filterddp_policy_at_cap"))
     {
@@ -599,6 +610,7 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
 
     mem->filter_size = 0;
     mem->policy_valid = 0;
+    mem->duals_valid = 0;
     mem->timeout_estimated_per_iteration_time = 0;
     mem->warm_started = 0;
     mem->warm_rows_fresh = 0;
@@ -1382,6 +1394,173 @@ static void filterddp_restore_module_pointers(ocp_nlp_config *config, ocp_nlp_di
 
 
 
+// slacks of inequality row j of stage i from its value g at ux, as in IPOPT: a soft side takes the part of g outside
+// its bound, sig = max(ls, gl - g) (lower) or max(ls, g - gu) (upper), pushed off its own bound ls, and relaxes the
+// bound by sig; the row slack s is g pushed into the interior of the relaxed bounds [gl - sig_l, gu + sig_u]
+// (filterddp_interior with kappa_1, kappa_2)
+static void filterddp_init_row_slack(ocp_nlp_dims *dims, ocp_nlp_filterddp_opts *opts, ocp_nlp_filterddp_memory *mem,
+        struct blasfeo_dvec *ux, int i, int j, double value)
+{
+    ocp_nlp_constraints_bgh_dims *cdims = dims->constraints[i];
+    int nux = dims->nu[i] + dims->nx[i];
+    int is = mem->idxs_g[i][j];
+    double gl = VEL(mem->gl+i, j);
+    double gu = VEL(mem->gu+i, j);
+    if (VEL(mem->masksl+i, j) != 0.0)
+    {
+        double sig = filterddp_interior(filterddp_max(VEL(mem->lsl+i, j), gl-value), VEL(mem->lsl+i, j), 0.0, 1, 0,
+                opts->kappa_1, opts->kappa_2);
+        VEL(ux, nux+is) = sig;
+        gl -= sig;
+    }
+    if (VEL(mem->masksu+i, j) != 0.0)
+    {
+        double sig = filterddp_interior(filterddp_max(VEL(mem->lsu+i, j), value-gu), VEL(mem->lsu+i, j), 0.0, 1, 0,
+                opts->kappa_1, opts->kappa_2);
+        VEL(ux, nux+cdims->ns+is) = sig;
+        gu += sig;
+    }
+    VEL(mem->s+i, j) = filterddp_interior(value, gl, gu,
+            VEL(mem->maskgl+i, j) != 0.0, VEL(mem->maskgu+i, j) != 0.0, opts->kappa_1, opts->kappa_2);
+}
+
+
+
+// lower bound on the multipliers of the last solve in the barrier parameter of the mu_based initialization, as
+// warm_start_mult_bound_push of IPOPT
+#define FILTERDDP_MULT_BOUND_PUSH 1e-3
+
+// one bounded side at the distance d > 0 from its bound with the multiplier z: with mu > 0 sets z = mu/d, else adds
+// d max(z, FILTERDDP_MULT_BOUND_PUSH) to sum and counts the side
+static void filterddp_centre_side(double d, double *z, double mu, double *sum, int *n)
+{
+    if (!(d > 0.0))
+        return;
+    if (mu > 0.0)
+    {
+        *z = mu/d;
+    }
+    else
+    {
+        *sum += d*filterddp_max(*z, FILTERDDP_MULT_BOUND_PUSH);
+        (*n)++;
+    }
+}
+
+
+
+// filterddp_centre_side on every bounded side of the iterate: the controls, the slacks of the inequality rows at their
+// bounds relaxed by the soft constraint slacks, and the soft constraint slacks
+static void filterddp_centre_sides(ocp_nlp_dims *dims, ocp_nlp_out *out, ocp_nlp_filterddp_memory *mem, double mu,
+        double *sum, int *n)
+{
+    for (int i = 0; i < dims->N; i++)
+    {
+        int nui = dims->nu[i];
+        int nux = nui + dims->nx[i];
+        int nsi = ((ocp_nlp_constraints_bgh_dims *) dims->constraints[i])->ns;
+        for (int j = 0; j < nui; j++)
+        {
+            double u = VEL(out->ux+i, j);
+            if (VEL(mem->maskul+i, j) != 0.0)
+                filterddp_centre_side(u - VEL(mem->ul+i, j), &VEL(mem->zl+i, j), mu, sum, n);
+            if (VEL(mem->maskuu+i, j) != 0.0)
+                filterddp_centre_side(VEL(mem->uu+i, j) - u, &VEL(mem->zu+i, j), mu, sum, n);
+        }
+        for (int j = 0; j < mem->ng[i]; j++)
+        {
+            int is = mem->idxs_g[i][j];
+            double s = VEL(mem->s+i, j);
+            double sigl = VEL(mem->masksl+i, j) != 0.0 ? VEL(out->ux+i, nux+is) : 0.0;
+            double sigu = VEL(mem->masksu+i, j) != 0.0 ? VEL(out->ux+i, nux+nsi+is) : 0.0;
+            if (VEL(mem->maskgl+i, j) != 0.0)
+                filterddp_centre_side(s - VEL(mem->gl+i, j) + sigl, &VEL(mem->zsl+i, j), mu, sum, n);
+            if (VEL(mem->maskgu+i, j) != 0.0)
+                filterddp_centre_side(VEL(mem->gu+i, j) - s + sigu, &VEL(mem->zsu+i, j), mu, sum, n);
+            if (VEL(mem->masksl+i, j) != 0.0)
+                filterddp_centre_side(sigl - VEL(mem->lsl+i, j), &VEL(mem->xil+i, j), mu, sum, n);
+            if (VEL(mem->masksu+i, j) != 0.0)
+                filterddp_centre_side(sigu - VEL(mem->lsu+i, j), &VEL(mem->xiu+i, j), mu, sum, n);
+        }
+    }
+}
+
+
+
+// every bound multiplier ineq_dual_init on a side with a bound and 0 on the others, phi and nu 0
+static void filterddp_constant_multipliers(ocp_nlp_dims *dims, ocp_nlp_filterddp_opts *opts,
+        ocp_nlp_filterddp_memory *mem)
+{
+    for (int i = 0; i < dims->N; i++)
+    {
+        blasfeo_dvecse(mem->nh[i], 0.0, mem->phi+i, 0);
+        blasfeo_dvecse(mem->ng[i], 0.0, mem->nu+i, 0);
+        for (int j = 0; j < dims->nu[i]; j++)
+        {
+            VEL(mem->zl+i, j) = opts->ineq_dual_init*VEL(mem->maskul+i, j);
+            VEL(mem->zu+i, j) = opts->ineq_dual_init*VEL(mem->maskuu+i, j);
+        }
+        for (int j = 0; j < mem->ng[i]; j++)
+        {
+            VEL(mem->zsl+i, j) = opts->ineq_dual_init*VEL(mem->maskgl+i, j);
+            VEL(mem->zsu+i, j) = opts->ineq_dual_init*VEL(mem->maskgu+i, j);
+            VEL(mem->xil+i, j) = opts->ineq_dual_init*VEL(mem->masksl+i, j);
+            VEL(mem->xiu+i, j) = opts->ineq_dual_init*VEL(mem->masksu+i, j);
+        }
+    }
+}
+
+
+
+/*
+ * Multipliers and barrier parameter at the initial primal iterate, by bound_mult_init_method as in IPOPT:
+ * constant: every bound multiplier ineq_dual_init (IPOPT's bound_mult_init_val), the multipliers phi of the equality
+ * rows and nu of the inequality rows 0, mu = mu_init;
+ * mu_based: centred, mu = avg_j d_j max(z_j, FILTERDDP_MULT_BOUND_PUSH) clipped to [mu_min, mu_init], over the bounded
+ * sides j with d_j their distance to the bound at the initial iterate and z_j their multiplier of the last solve at
+ * the same stage and index (ineq_dual_init without one, which gives mu = mu_init if the distances average at least
+ * mu_init/ineq_dual_init, IPOPT's mu_based); then every bound multiplier mu/d_j, nu = zsu - zsl (stationarity with
+ * respect to the slack) and phi = 0.
+ */
+static void filterddp_initialize_multipliers(ocp_nlp_dims *dims, ocp_nlp_out *out, ocp_nlp_filterddp_opts *opts,
+        ocp_nlp_filterddp_memory *mem)
+{
+    if (opts->bound_mult_init_method != 1)
+    {
+        filterddp_constant_multipliers(dims, opts, mem);
+        mem->mu = opts->mu_init;
+        return;
+    }
+
+    // mu_based: the barrier parameter from the multipliers of the last solve, or from ineq_dual_init
+    if (!mem->duals_valid)
+        filterddp_constant_multipliers(dims, opts, mem);
+    double sum = 0.0;
+    int n = 0;
+    filterddp_centre_sides(dims, out, mem, 0.0, &sum, &n);
+    double mu = opts->mu_init;
+    if (n > 0)
+        mu = filterddp_max(filterddp_mu_min(opts->nlp_opts), filterddp_min(opts->mu_init, sum/n));
+
+    // the multipliers centred at mu: zero on the sides without a bound, mu/d on the others
+    filterddp_constant_multipliers(dims, opts, mem);
+    filterddp_centre_sides(dims, out, mem, mu, &sum, &n);
+    for (int i = 0; i < dims->N; i++)
+    {
+        for (int j = 0; j < mem->ng[i]; j++)
+            VEL(mem->nu+i, j) = VEL(mem->zsu+i, j) - VEL(mem->zsl+i, j);
+    }
+    mem->mu = mu;
+}
+
+
+
+/*
+ * Initial iterate of a solve from the controls in out: x_0 from the initial state bound, the controls pushed into
+ * the interior of their bounds, the states rolled out, x_{i+1} = f(x_i, u_i). The slacks start from the constraint
+ * values at this primal iterate (filterddp_init_row_slack), the multipliers and the barrier parameter as set by
+ * bound_mult_init_method (filterddp_initialize_multipliers).
+ */
 static void filterddp_initialize_trajectory(ocp_nlp_config *config, ocp_nlp_dims *dims, ocp_nlp_in *in,
         ocp_nlp_out *out, ocp_nlp_filterddp_opts *opts, ocp_nlp_filterddp_memory *mem, ocp_nlp_filterddp_workspace *work)
 {
@@ -1410,54 +1589,19 @@ static void filterddp_initialize_trajectory(ocp_nlp_config *config, ocp_nlp_dims
                     VEL(mem->maskul+i, j) != 0.0, VEL(mem->maskuu+i, j) != 0.0, opts->kappa_1, opts->kappa_2);
         }
 
-        // slacks from constraint values; soft rows absorb their violation with the soft constraint slacks,
-        // kept interior of their bounds, so that s starts interior of the relaxed bounds
+        // slacks from constraint values
         if (mem->ng[i] > 0)
         {
             filterddp_evaluate_constraints_at(config, dims, in, nlp_opts, nlp_mem, nlp_work, out, i);
             ocp_nlp_constraints_bgh_memory *constr_mem = nlp_mem->constraints[i];
             ocp_nlp_constraints_bgh_dims *cdims = dims->constraints[i];
-            int nux = nu[i] + nx[i];
             for (int j = 0; j < mem->ng[i]; j++)
             {
                 int idx = mem->idxg[i][j];
-                int is = mem->idxs_g[i][j];
                 double value = idx < cdims->nb ? VEL(out->ux+i, constr_mem->idxb[idx])
                         : filterddp_row_value(dims, in, nlp_mem, mem, out->ux+i, i, idx);
-                double gl = VEL(mem->gl+i, j);
-                double gu = VEL(mem->gu+i, j);
-                if (VEL(mem->masksl+i, j) != 0.0)
-                {
-                    double sig = filterddp_interior(filterddp_max(VEL(mem->lsl+i, j), gl-value), VEL(mem->lsl+i, j), 0.0, 1, 0,
-                            opts->kappa_1, opts->kappa_2);
-                    VEL(out->ux+i, nux+is) = sig;
-                    gl -= sig;
-                }
-                if (VEL(mem->masksu+i, j) != 0.0)
-                {
-                    double sig = filterddp_interior(filterddp_max(VEL(mem->lsu+i, j), value-gu), VEL(mem->lsu+i, j), 0.0, 1, 0,
-                            opts->kappa_1, opts->kappa_2);
-                    VEL(out->ux+i, nux+cdims->ns+is) = sig;
-                    gu += sig;
-                }
-                VEL(mem->s+i, j) = filterddp_interior(value, gl, gu,
-                        VEL(mem->maskgl+i, j) != 0.0, VEL(mem->maskgu+i, j) != 0.0, opts->kappa_1, opts->kappa_2);
+                filterddp_init_row_slack(dims, opts, mem, out->ux+i, i, j, value);
             }
-        }
-
-        blasfeo_dvecse(mem->nh[i], 0.0, mem->phi+i, 0);
-        blasfeo_dvecse(mem->ng[i], 0.0, mem->nu+i, 0);
-        for (int j = 0; j < nu[i]; j++)
-        {
-            VEL(mem->zl+i, j) = opts->ineq_dual_init*VEL(mem->maskul+i, j);
-            VEL(mem->zu+i, j) = opts->ineq_dual_init*VEL(mem->maskuu+i, j);
-        }
-        for (int j = 0; j < mem->ng[i]; j++)
-        {
-            VEL(mem->zsl+i, j) = opts->ineq_dual_init*VEL(mem->maskgl+i, j);
-            VEL(mem->zsu+i, j) = opts->ineq_dual_init*VEL(mem->maskgu+i, j);
-            VEL(mem->xil+i, j) = opts->ineq_dual_init*VEL(mem->masksl+i, j);
-            VEL(mem->xiu+i, j) = opts->ineq_dual_init*VEL(mem->masksu+i, j);
         }
 
         // rollout
@@ -1467,6 +1611,7 @@ static void filterddp_initialize_trajectory(ocp_nlp_config *config, ocp_nlp_dims
         blasfeo_daxpy(nx[i+1], 1.0, fun, 0, out->ux+i+1, nu[i+1], out->ux+i+1, nu[i+1]);
     }
     filterddp_restore_module_pointers(config, dims, nlp_mem, out);
+    filterddp_initialize_multipliers(dims, out, opts, mem);
 }
 
 
@@ -2896,15 +3041,14 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
     mem->warm_started = warm;
     if (!warm)
     {
+        // initial iterate, multipliers and barrier parameter
         mem->warm_rows_fresh = 0;
         filterddp_initialize_trajectory(config, dims, nlp_in, nlp_out, opts, mem, work);
     }
-
-    mem->mu = opts->mu_init;
-    if (warm)
+    else
     {
         // continue from the barrier parameter the previous solve ended with
-        mem->mu = filterddp_max(filterddp_mu_min(nlp_opts), filterddp_min(mem->mu, mu_previous));
+        mem->mu = filterddp_max(filterddp_mu_min(nlp_opts), filterddp_min(opts->mu_init, mu_previous));
     }
     mem->reg_last = 0.0;
     mem->step_size = 0.0;
@@ -3076,6 +3220,8 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
     }
     filterddp_restore_module_pointers(config, dims, nlp_mem, nlp_out);
     mem->policy_valid = policy_valid;
+    // the multipliers of a solve that leaves a policy are those of the mu_based initialization of the next solve
+    mem->duals_valid = policy_valid;
     filterddp_export_solution(config, dims, nlp_in, nlp_out, opts, mem, work);
 
     nlp_mem->iter = iter;
@@ -3251,6 +3397,7 @@ void ocp_nlp_filterddp_memory_reset_qp_solver(void *config_, void *dims_, void *
     mem->mu = 0.0;
     mem->filter_size = 0;
     mem->policy_valid = 0;
+    mem->duals_valid = 0;
     mem->timeout_estimated_per_iteration_time = 0;
     mem->warm_started = 0;
     mem->warm_rows_fresh = 0;
