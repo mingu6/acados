@@ -405,6 +405,8 @@ class AcadosOcpSolver:
 
         self.__acados_lib.ocp_nlp_out_set.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_int, c_char_p, c_void_p]
         self.__acados_lib.ocp_nlp_set.argtypes = [c_void_p, c_int, c_char_p, c_void_p]
+        self.__acados_lib.ocp_nlp_warm_start_from_policy.argtypes = [c_void_p, c_void_p, c_void_p, POINTER(c_double)]
+        self.__acados_lib.ocp_nlp_warm_start_from_policy.restype = c_int
 
         self.__acados_lib.ocp_nlp_cost_dims_get_from_attr.argtypes = [c_void_p, c_void_p, c_void_p, c_int, c_char_p, POINTER(c_int)]
         self.__acados_lib.ocp_nlp_cost_dims_get_from_attr.restype = c_int
@@ -601,6 +603,35 @@ class AcadosOcpSolver:
         self._status = getattr(self.shared_lib, f"{self.ocp.name}_acados_solve")(self.capsule)
 
         return self.status
+
+
+    def warm_start_from_policy(self, x0: np.ndarray) -> int:
+        """
+        FILTERDDP: warm start of the next solve from the affine policy of the previous solve, in closed loop from
+        the new initial state x0. Stage i takes the update rule of the next stage of the previous solve (the rules
+        shifted by one stage; the last stage, and in a multi-phase OCP the stages before a change of nx or nu, keep
+        their own), u_i = u_k + k_k + K_k (x_i - x_k), with the controls pushed into the interior of their bounds,
+        and x_{i+1} = f(x_i, u_i), from x_0 = x0. The rollout replaces x and u of the current iterate; the next
+        solve starts from these controls as from any initial guess: it rolls them out from its initial state bound
+        and initializes the slacks and multipliers there (see filterddp_bound_mult_init_method).
+
+        Call it after setting the bounds and parameters of the next solve, as the rollout uses them.
+        A closed loop: set the initial state bounds (lbx, ubx at stage 0), call warm_start_from_policy(x0), solve().
+
+        :param x0: initial state of the next solve
+        :return: 0 (ACADOS_SUCCESS) if the iterate was replaced; else the iterate is unchanged:
+            5 (ACADOS_READY) without a policy to take: no solve since the creation or the last reset, a last solve
+            that failed (a solve that converged, reached the iteration cap or timed out leaves one), or a policy
+            already taken by an earlier call; 1 (ACADOS_NAN_DETECTED) if the rollout is not finite.
+        """
+        if self.ocp.solver_options.nlp_solver_type != 'FILTERDDP':
+            raise NotImplementedError('warm_start_from_policy is only implemented for nlp_solver_type FILTERDDP.')
+        nx0 = self.__acados_lib.ocp_nlp_dims_get_from_attr(self.nlp_config, self.nlp_dims, self.nlp_out, 0, "x".encode('utf-8'))
+        x0 = np.ascontiguousarray(x0, dtype=np.float64).ravel()
+        if x0.size != nx0:
+            raise ValueError(f'warm_start_from_policy: x0 must have {nx0} entries, got {x0.size}.')
+        return self.__acados_lib.ocp_nlp_warm_start_from_policy(self.nlp_solver, self.nlp_in, self.nlp_out,
+                                                                cast(x0.ctypes.data, POINTER(c_double)))
 
     def setup_qp_matrices_and_factorize(self) -> int:
         """
@@ -2471,7 +2502,7 @@ class AcadosOcpSolver:
                 'anderson_activation_threshold',
                 'levenberg_marquardt',
                 'adaptive_levenberg_marquardt_lam', 'adaptive_levenberg_marquardt_mu_min', 'adaptive_levenberg_marquardt_mu0',
-                'tau_min', 'filterddp_policy_at_cap', 'filterddp_symmetric_value_hessian',
+                'tau_min', 'filterddp_bound_mult_init_method', 'filterddp_policy_at_cap', 'filterddp_symmetric_value_hessian',
                 'filterddp_dynamics_multiplier',
                 'filterddp_mu_init', 'filterddp_ineq_dual_init', 'filterddp_kappa_1', 'filterddp_kappa_2', 'filterddp_reg_1',
                 'filterddp_reg_min', 'filterddp_reg_max', 'filterddp_kappa_bar_w_p', 'filterddp_kappa_w_p', 'filterddp_kappa_w_m',
@@ -2489,7 +2520,14 @@ class AcadosOcpSolver:
             - qp_mu0: for HPIPM QP solvers: initial value for complementarity slackness
             - warm_start_first_qp: indicates if first QP in SQP is warm_started
             - rti_phase: 0: PREPARATION_AND_FEEDBACK, 1: PREPARATION, 2: FEEDBACK; only support for nlp_solver = 'SQP_RTI'
+            - filterddp_bound_mult_init_method: 'constant' or 'mu_based', see AcadosOcpOptions.filterddp_bound_mult_init_method
         """
+        if field_ == 'filterddp_bound_mult_init_method':
+            methods = {'constant': 0, 'mu_based': 1}
+            if value_ not in methods:
+                raise ValueError(f'solver option \'{field_}\' must be \'constant\' or \'mu_based\', got {value_!r}.')
+            value_ = methods[value_]
+
         int_fields = ['print_level',
                       'rti_phase',
                       'globalization_line_search_use_sufficient_descent',
@@ -2502,6 +2540,7 @@ class AcadosOcpSolver:
                       'qp_warm_start',
                       'qp_print_level',
                       'qp_t0_init',
+                      'filterddp_bound_mult_init_method',
                       'filterddp_policy_at_cap',
                       'filterddp_symmetric_value_hessian',
                       'filterddp_dynamics_multiplier']

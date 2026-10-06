@@ -265,6 +265,20 @@ classdef AcadosOcpSolver < handle
             obj.t_ocp.solve();
         end
 
+        function status = warm_start_from_policy(obj, x0)
+            % FILTERDDP: warm start of the next solve from the affine policy of the previous solve, shifted by one
+            % stage and rolled out in closed loop from the initial state x0 of the next solve; replaces x and u of
+            % the current iterate, from which the next solve initializes. Call it after setting the bounds and
+            % parameters of the next solve. See AcadosOcpSolver.warm_start_from_policy of the Python interface.
+            % Returns 0 (ACADOS_SUCCESS) if the iterate was replaced, else the iterate is unchanged:
+            % 5 (ACADOS_READY) without a policy to take (no solve since the creation or the last reset, a failed
+            % last solve, or a policy already taken), 1 (ACADOS_NAN_DETECTED) if the rollout is not finite.
+            if ~strcmp(obj.ocp.solver_options.nlp_solver_type, 'FILTERDDP')
+                error('warm_start_from_policy is only implemented for nlp_solver_type FILTERDDP.');
+            end
+            status = obj.t_ocp.warm_start_from_policy(x0(:));
+        end
+
         function eval_param_sens(obj, field, stage, index)
             obj.t_ocp.eval_param_sens(field, stage, index);
         end
@@ -836,14 +850,14 @@ classdef AcadosOcpSolver < handle
 
             % auto detect whether to compile the interface or not
             if isempty(obj.solver_creation_opts.compile_interface)
-                % check if mex interface exists already
+                % check if mex interface exists already, including its latest addition
                 if is_octave()
-                    mex_exists = exist( fullfile(obj.solver_creation_opts.output_dir,...
-                        '/ocp_get.mex'), 'file');
+                    mex_ext = 'mex';
                 else
-                    mex_exists = exist( fullfile(obj.solver_creation_opts.output_dir,...
-                        ['ocp_get.', mexext]), 'file');
+                    mex_ext = mexext;
                 end
+                mex_exists = exist(fullfile(obj.solver_creation_opts.output_dir, ['ocp_get.', mex_ext]), 'file') && ...
+                    exist(fullfile(obj.solver_creation_opts.output_dir, ['ocp_warm_start_from_policy.', mex_ext]), 'file');
                 % check if mex interface is linked against the same external libs as the core
                 if mex_exists
                     acados_folder = getenv('ACADOS_INSTALL_DIR');

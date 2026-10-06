@@ -98,6 +98,7 @@ cdef extern from "acados_c/ocp_nlp_interface.h":
     void ocp_nlp_eval_residuals(ocp_nlp_solver *solver, ocp_nlp_in *nlp_in, ocp_nlp_out *nlp_out)
     void ocp_nlp_eval_param_sens(ocp_nlp_solver *solver, char *field, int stage, int index, ocp_nlp_out *sens_nlp_out)
     void ocp_nlp_eval_cost(ocp_nlp_solver *solver, ocp_nlp_in *nlp_in_, ocp_nlp_out *nlp_out)
+    int ocp_nlp_warm_start_from_policy(ocp_nlp_solver *solver, ocp_nlp_in *nlp_in, ocp_nlp_out *nlp_out, double *x0)
     void ocp_nlp_eval_params_jac(ocp_nlp_solver *solver, ocp_nlp_in *nlp_in_, ocp_nlp_out *nlp_out)
     void ocp_nlp_eval_lagrange_grad_p(ocp_nlp_solver *solver, ocp_nlp_in *nlp_in_, const char *field, void* value)
     # get/set

@@ -154,6 +154,10 @@ classdef {{ name }}_mex_solver < handle
             ocp_eval_param_sens(obj.C_ocp, field, stage, index);
         end
 
+        function status = warm_start_from_policy(obj, x0)
+            status = ocp_warm_start_from_policy(obj.C_ocp, x0);
+        end
+
         function value = get(varargin)
             % usage:
             % obj.get(field, value, [stage])

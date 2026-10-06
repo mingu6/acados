@@ -2595,6 +2595,9 @@ ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "allow_direction_mode_switch_to_no
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_theta_max_factor", &filterddp_theta_max_factor);
     double filterddp_theta_min_factor = {{ solver_options.filterddp_theta_min_factor }}e0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_theta_min_factor", &filterddp_theta_min_factor);
+    // 0: constant, 1: mu_based
+    int filterddp_bound_mult_init_method = {% if solver_options.filterddp_bound_mult_init_method == "mu_based" %}1{% else %}0{% endif %};
+    ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_bound_mult_init_method", &filterddp_bound_mult_init_method);
     int filterddp_policy_at_cap = {{ solver_options.filterddp_policy_at_cap }};
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "filterddp_policy_at_cap", &filterddp_policy_at_cap);
     int filterddp_symmetric_value_hessian = {{ solver_options.filterddp_symmetric_value_hessian }};

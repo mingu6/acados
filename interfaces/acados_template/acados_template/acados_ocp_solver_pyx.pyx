@@ -137,6 +137,27 @@ cdef class AcadosOcpSolverCython:
         return self.status
 
 
+    def warm_start_from_policy(self, x0_):
+        """
+        FILTERDDP: warm start of the next solve from the affine policy of the previous solve, shifted by one stage
+        and rolled out in closed loop from the initial state x0 of the next solve; replaces x and u of the current
+        iterate, from which the next solve initializes. Call it after setting the bounds and parameters of the next
+        solve. See AcadosOcpSolver.warm_start_from_policy.
+
+        :param x0: initial state of the next solve
+        :return: 0 (ACADOS_SUCCESS) if the iterate was replaced; else the iterate is unchanged: 5 (ACADOS_READY)
+            without a policy to take, 1 (ACADOS_NAN_DETECTED) if the rollout is not finite.
+        """
+        if self.nlp_solver_type != 'FILTERDDP':
+            raise NotImplementedError('warm_start_from_policy is only implemented for nlp_solver_type FILTERDDP.')
+        cdef int nx0 = acados_solver_common.ocp_nlp_dims_get_from_attr(self.nlp_config, self.nlp_dims, self.nlp_out, 0, "x".encode('utf-8'))
+        cdef cnp.ndarray[cnp.float64_t, ndim=1] x0 = np.ascontiguousarray(x0_, dtype=np.float64).ravel()
+        if x0.size != nx0:
+            raise ValueError(f'warm_start_from_policy: x0 must have {nx0} entries, got {x0.size}.')
+        return acados_solver_common.ocp_nlp_warm_start_from_policy(self.nlp_solver, self.nlp_in, self.nlp_out,
+                                                                   <double *> x0.data)
+
+
     def get_status(self):
         return self.status
 
@@ -862,8 +883,16 @@ cdef class AcadosOcpSolverCython:
             - qp_tau_min: for HPIPM QP solvers: minimum value of barrier parameter in HPIPM
             - qp_mu0: for HPIPM QP solvers: initial value for complementarity slackness
             - warm_start_first_qp: indicates if first QP in SQP is warm_started
+            - filterddp_bound_mult_init_method: 'constant' or 'mu_based', see AcadosOcpOptions.filterddp_bound_mult_init_method
         """
-        int_fields = ['print_level', 'rti_phase', 'qp_warm_start', 'line_search_use_sufficient_descent', 'full_step_dual', 'globalization_use_SOC', 'warm_start_first_qp']
+        if field_ == 'filterddp_bound_mult_init_method':
+            methods = {'constant': 0, 'mu_based': 1}
+            if value_ not in methods:
+                raise ValueError(f'solver option \'{field_}\' must be \'constant\' or \'mu_based\', got {value_!r}.')
+            value_ = methods[value_]
+
+        int_fields = ['print_level', 'rti_phase', 'qp_warm_start', 'line_search_use_sufficient_descent', 'full_step_dual', 'globalization_use_SOC', 'warm_start_first_qp',
+                      'filterddp_bound_mult_init_method']
         double_fields = ['step_length', 'tol_eq', 'tol_stat', 'tol_ineq', 'tol_comp', 'alpha_min', 'alpha_reduction', 'eps_sufficient_descent',
         'qp_tol_stat', 'qp_tol_eq', 'qp_tol_ineq', 'qp_tol_comp', 'qp_tau_min', 'qp_mu0']
         string_fields = ['globalization']

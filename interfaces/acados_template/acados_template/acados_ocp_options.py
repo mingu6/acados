@@ -177,6 +177,7 @@ class AcadosOcpOptions:
         self.__filterddp_gamma_L = 1e-5
         self.__filterddp_theta_max_factor = 1e6
         self.__filterddp_theta_min_factor = 1e-4
+        self.__filterddp_bound_mult_init_method = 'constant'
         self.__filterddp_policy_at_cap = 1
         self.__filterddp_symmetric_value_hessian = 2
         self.__filterddp_dynamics_multiplier = 0
@@ -2765,11 +2766,30 @@ class AcadosOcpOptions:
             raise ValueError('Invalid filterddp_theta_min_factor value. filterddp_theta_min_factor must be a float greater than 0.')
 
     @property
+    def filterddp_bound_mult_init_method(self):
+        """
+        FILTERDDP: Initialization of the bound multipliers and of the barrier parameter mu at the start of a solve, as IPOPT's bound_mult_init_method. The slacks of the inequality rows always start from the constraint values at the initial primal iterate, pushed into the interior of their bounds (filterddp_kappa_1, filterddp_kappa_2).
+        'constant': every bound multiplier filterddp_ineq_dual_init (IPOPT's bound_mult_init_val), the multipliers of the equality and inequality rows 0, mu = filterddp_mu_init.
+        'mu_based': centred multipliers z = mu/d, with d the distance of a side to its bound, the multipliers of the inequality rows from the stationarity with respect to their slacks and those of the equality rows 0, at mu = avg(d max(z_prev, 1e-3)) clipped to [mu_min, filterddp_mu_init]: the average over all bounded sides, z_prev the multiplier of the side in the previous solve (same stage and row index; the floor 1e-3 is IPOPT's warm_start_mult_bound_push). Without a previous solve that left a policy (see AcadosOcpSolver.warm_start_from_policy), z_prev = filterddp_ineq_dual_init, IPOPT's mu_based.
+        Meant for closed-loop warm starts with AcadosOcpSolver.warm_start_from_policy; can be changed at runtime with options_set.
+
+        Default: 'constant'
+        """
+        return self.__filterddp_bound_mult_init_method
+
+    @filterddp_bound_mult_init_method.setter
+    def filterddp_bound_mult_init_method(self, filterddp_bound_mult_init_method):
+        if filterddp_bound_mult_init_method in ('constant', 'mu_based'):
+            self.__filterddp_bound_mult_init_method = filterddp_bound_mult_init_method
+        else:
+            raise ValueError("Invalid filterddp_bound_mult_init_method value. Expected 'constant' or 'mu_based'.")
+
+    @property
     def filterddp_policy_at_cap(self):
         """
-        FILTERDDP: Affine policy a solve stopped at the iteration cap leaves for the warm start of the next solve.
+        FILTERDDP: Affine policy a solve stopped at the iteration cap leaves for AcadosOcpSolver.warm_start_from_policy before the next solve.
         1: the update rules of an extra backward pass at the returned iterate;
-        0: those of the last backward pass, which the last step took with the step size alpha: shifted from the returned iterate with the feedforward still to be taken, 1 - alpha. Saves the extra backward pass; the cost and the dynamics multipliers pi returned are then those of the iterate before the last step.
+        0: those of the last backward pass, which the last step took with the step size alpha: applied from the returned iterate with the feedforward still to be taken, 1 - alpha. Saves the extra backward pass; the cost and the dynamics multipliers pi returned are then those of the iterate before the last step.
         Solves stopped by convergence or timeout always leave the rules of the backward pass at the returned iterate.
 
         Default: 1
