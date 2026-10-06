@@ -1411,7 +1411,7 @@ class AcadosOcp:
                        'nlp_solver_warm_start_first_qp_from_nlp', 'nlp_qp_tol_strategy',
                        'qp_solver_iter_max', 'qp_solver_tol_stat', 'qp_solver_tol_eq', 'qp_solver_tol_ineq', 'qp_solver_tol_comp',
                        'qp_solver_warm_start', 'qp_solver_mu0', 'qpscaling_scale_constraints', 'qpscaling_scale_objective',
-                       'store_iterates', 'log_primal_step_norm', 'log_dual_step_norm', 'timeout_max_time']
+                       'store_iterates', 'log_primal_step_norm', 'log_dual_step_norm']
             changed = [name for name in ignored if getattr(opts, name) != getattr(defaults, name)]
             # defaults set below by make_consistent for globalization FIXED_STEP
             filled = {'globalization_alpha_min': 0.05, 'globalization_eps_sufficient_descent': 1e-4,

@@ -1453,7 +1453,8 @@ class AcadosOcpOptions:
         ``current_time_tot + predicted_per_iteration_time > timeout_max_time``
         is satisfied at the end of an SQP iteration.
         The value of ``predicted_per_iteration_time`` is estimated using ``timeout_heuristic``.
-        Currently implemented for SQP and SQP_WITH_FEASIBLE_QP.
+        Currently implemented for SQP, SQP_WITH_FEASIBLE_QP and FILTERDDP.
+        FILTERDDP: Maximum wall time from the start of the solve call, checked after each backward pass; a timeout returns the last accepted iterate, from which the warm start continues [max_wall_time, with a look-ahead of one iteration].
         Default: 0.
         """
         return self.__timeout_max_time
@@ -1488,7 +1489,7 @@ class AcadosOcpOptions:
         LAST: Use the time required by the last iteration as estimate.
         AVERAGE: Use an exponential moving average of the previous per iteration times as estimate (weight is currently fixed at 0.5).
         ZERO: Use 0 as estimate.
-        Currently implemented for SQP and SQP_WITH_FEASIBLE_QP.
+        Currently implemented for SQP, SQP_WITH_FEASIBLE_QP and FILTERDDP (FILTERDDP: an iteration is a forward pass or barrier update and the backward pass after it).
         Default: ZERO.
         """
         return self.__timeout_heuristic

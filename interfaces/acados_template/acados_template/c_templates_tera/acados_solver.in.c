@@ -2895,7 +2895,7 @@ static void {{ name }}_acados_create_set_opts({{ name }}_solver_capsule* capsule
     double nlp_qp_tol_min_comp = {{ solver_options.nlp_qp_tol_min_comp }};
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "nlp_qp_tol_min_comp", &nlp_qp_tol_min_comp);
 
-{%- if (solver_options.nlp_solver_type == "SQP" or solver_options.nlp_solver_type == "SQP_WITH_FEASIBLE_QP") and solver_options.timeout_max_time > 0 %}
+{%- if (solver_options.nlp_solver_type == "SQP" or solver_options.nlp_solver_type == "SQP_WITH_FEASIBLE_QP" or solver_options.nlp_solver_type == "FILTERDDP") and solver_options.timeout_max_time > 0 %}
     double timeout_max_time = {{ solver_options.timeout_max_time }};
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "timeout_max_time", &timeout_max_time);
 
