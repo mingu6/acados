@@ -2399,10 +2399,25 @@ static void filterddp_accept_trial(ocp_nlp_dims *dims, ocp_nlp_out *out, ocp_nlp
  * output
  ************************************************/
 
+// stage of the previous solve whose update rules stage i takes in the warm start: the next stage if it has the
+// same dimensions, else stage i itself (the last stage, and the stages before a change of nx or nu in a
+// multi-phase OCP, where the rules of the next stage do not fit)
+static int filterddp_shift_source(ocp_nlp_dims *dims, int i)
+{
+    if (i+1 < dims->N && dims->nx[i+1] == dims->nx[i] && dims->nu[i+1] == dims->nu[i])
+        return i+1;
+    return i;
+}
+
+
+
 /*
  * Warm start: initialize the iterate from the affine update rules of the previous solve shifted by one
  * stage, u_i = u_{i+1} + alpha_{i+1} + beta_{i+1} (x_i - x_{i+1}), rolled out from the new initial state,
- * with the same rules for slacks and multipliers. The last stage repeats the rule of stage N-1.
+ * with the same rules for slacks and multipliers. A stage without a next stage of the same dimensions keeps its
+ * own rule of the previous solve, evaluated at its new state: the last stage, and in a multi-phase OCP the
+ * stages before a change of nx or nu, as the transition stage and the stage before it. Shifting between stages
+ * of the same dimensions requires the same constraint rows, otherwise the solve starts cold.
  */
 static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, ocp_nlp_in *in,
         ocp_nlp_out *out, ocp_nlp_out *trial, ocp_nlp_filterddp_opts *opts, ocp_nlp_filterddp_memory *mem,
@@ -2418,14 +2433,14 @@ static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, oc
 
     for (int i = 0; i < N-1; i++)
     {
-        if (nx[i] != nx[i+1] || nu[i] != nu[i+1] || mem->nh[i] != mem->nh[i+1] || mem->ng[i] != mem->ng[i+1])
+        if (filterddp_shift_source(dims, i) == i)
+            continue;
+        if (mem->nh[i] != mem->nh[i+1] || mem->ng[i] != mem->ng[i+1])
             return 0;
         for (int j = 0; j < mem->ng[i]; j++)
             if (mem->idxs_g[i][j] != mem->idxs_g[i+1][j])
                 return 0;
     }
-    if (nx[N] != nx[N-1])
-        return 0;
 
     ocp_nlp_constraints_bgh_model *model0 = in->constraints[0];
     ocp_nlp_constraints_bgh_dims *cdims0 = dims->constraints[0];
@@ -2439,7 +2454,7 @@ static int filterddp_shift_policy(ocp_nlp_config *config, ocp_nlp_dims *dims, oc
     int ok = 1;
     for (int i = 0; i < N && ok; i++)
     {
-        int k = i+1 < N ? i+1 : N-1;
+        int k = filterddp_shift_source(dims, i);
         int nxi = nx[i];
         int nui = nu[i];
         int nhi = mem->nh[i];
