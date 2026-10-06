@@ -365,6 +365,13 @@ jobs:
         python test_filterddp.py
         python test_filterddp_timeout.py
 
+    - name: FILTERDDP multi-phase OCPs against SQP, warm start across the phases
+      working-directory: ${{ github.workspace }}/examples/acados_python/filterddp
+      shell: bash
+      run: |
+        source ${{ github.workspace }}/acadosenv/bin/activate
+        python test_filterddp_multiphase.py
+
     - name: FILTERDDP acrobot NMPC
       working-directory: ${{ github.workspace }}/examples/acados_python/filterddp/acrobot
       shell: bash
