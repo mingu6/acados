@@ -151,6 +151,9 @@ void ocp_nlp_filterddp_opts_initialize_default(void *config_, void *dims_, void 
     opts->symmetric_value_hessian = 2;
     opts->dynamics_multiplier = 0;
 
+    opts->timeout_heuristic = ZERO;
+    opts->timeout_max_time = 0; // corresponds to no timeout
+
     return;
 }
 
@@ -288,6 +291,14 @@ void ocp_nlp_filterddp_opts_set(void *config_, void *opts_, const char *field, v
     else if (!strcmp(field, "filterddp_dynamics_multiplier"))
     {
         opts->dynamics_multiplier = *(int *) value;
+    }
+    else if (!strcmp(field, "timeout_max_time"))
+    {
+        opts->timeout_max_time = *(double *) value;
+    }
+    else if (!strcmp(field, "timeout_heuristic"))
+    {
+        opts->timeout_heuristic = *(ocp_nlp_timeout_heuristic_t *) value;
     }
     else
     {
@@ -573,6 +584,7 @@ void *ocp_nlp_filterddp_memory_assign(void *config_, void *dims_, void *opts_, v
 
     mem->filter_size = 0;
     mem->policy_valid = 0;
+    mem->timeout_estimated_per_iteration_time = 0;
     mem->nlp_mem->status = ACADOS_READY;
 
     align_char_to(8, &c_ptr);
@@ -2683,6 +2695,12 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
     filterddp_reset_filter(mem);
     nlp_mem->status = ACADOS_SUCCESS;
 
+    // timeout: the clock runs from the start of the call, initialization and warm-start shift included
+    if (opts->timeout_heuristic != MAX_OVERALL)
+        mem->timeout_estimated_per_iteration_time = 0;
+    double timeout_previous_time_tot = 0.;
+    int timeout_checked = 0;
+
     int iter = 0;
     for (; iter < nlp_opts->max_iter; )
     {
@@ -2727,6 +2745,53 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
             nlp_mem->status = ACADOS_SUCCESS;
             break;
         }
+
+        // timeout, checked after each backward pass, before the barrier update or forward pass that would follow:
+        // the iterate is the one the last line search accepted (or the initial one) and the update rules,
+        // multipliers and statistics are those of the backward pass at it, as on convergence. An iteration in
+        // the sense of the heuristics is the time between two checks, a forward pass or barrier update and the
+        // backward pass after it; neither pass is interrupted.
+        if (opts->timeout_max_time > 0.)
+        {
+            nlp_timings->time_tot = acados_toc(&timer0);
+
+            // update the estimate of the time per iteration based on the chosen heuristic
+            if (timeout_checked)
+            {
+                double timeout_time_prev_iter = nlp_timings->time_tot - timeout_previous_time_tot;
+
+                switch (opts->timeout_heuristic)
+                {
+                    case LAST:
+                        mem->timeout_estimated_per_iteration_time = timeout_time_prev_iter;
+                        break;
+                    case MAX_CALL:
+                    case MAX_OVERALL:
+                        mem->timeout_estimated_per_iteration_time = filterddp_max(timeout_time_prev_iter,
+                                mem->timeout_estimated_per_iteration_time);
+                        break;
+                    case AVERAGE:
+                        // as in SQP, the average starts from zero in each call
+                        mem->timeout_estimated_per_iteration_time = 0.5*timeout_time_prev_iter
+                                + 0.5*mem->timeout_estimated_per_iteration_time;
+                        break;
+                    case ZERO: // predicted per iteration time is zero as initialized
+                        break;
+                    default:
+                        printf("Unknown timeout heuristic.\n");
+                        exit(1);
+                }
+            }
+            timeout_previous_time_tot = nlp_timings->time_tot;
+            timeout_checked = 1;
+
+            if (opts->timeout_max_time <= nlp_timings->time_tot + mem->timeout_estimated_per_iteration_time)
+            {
+                nlp_mem->status = ACADOS_TIMEOUT;
+                break;
+            }
+        }
+
         // barrier subproblem solved: its error below kappa_eps*mu, where no error needs to be smaller than its
         // termination tolerance (with equal tolerances and kappa_eps >= 10 this is kappa_eps*mu, as mu > mu_min)
         double mu_min = filterddp_mu_min(nlp_opts);
@@ -2763,7 +2828,10 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
         iter++;
     }
 
-    int policy_valid = nlp_mem->status == ACADOS_SUCCESS;
+    // a solve stopped by convergence or timeout leaves the update rules of the backward pass at the returned
+    // iterate, with the full feedforward still to be taken, which the warm start shifts as they are. A timeout
+    // never stops at the iteration cap, so the extra backward pass below does not add to its time.
+    int policy_valid = nlp_mem->status == ACADOS_SUCCESS || nlp_mem->status == ACADOS_TIMEOUT;
     if (iter == nlp_opts->max_iter)
     {
         nlp_mem->status = ACADOS_MAXITER;
@@ -2785,6 +2853,8 @@ int ocp_nlp_filterddp(void *config_, void *dims_, void *nlp_in_, void *nlp_out_,
             printf("\nEXIT: Failed, maximum solver iterations reached.\n\n");
         else if (nlp_mem->status == ACADOS_QP_FAILURE)
             printf("\nEXIT: Failed, unable to find iteration matrix with desired inertia in backward pass.\n\n");
+        else if (nlp_mem->status == ACADOS_TIMEOUT)
+            printf("\nEXIT: Stopped, maximum time reached.\n\n");
         else
             printf("\nEXIT: Failed, line-search unable to find acceptable iterate in forward pass.\n\n");
     }

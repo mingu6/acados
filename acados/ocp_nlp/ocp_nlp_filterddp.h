@@ -92,6 +92,9 @@ typedef struct
                                 // constraint rows, else Vx; 1: lambda; 2: Vx; 3: the one of Vx, lambda with the
                                 // smaller inf-norm, per stage; 4: elementwise the entry of smaller magnitude
 
+    double timeout_max_time;    // maximum time the solve may require before timeout is triggered. No timeout if 0.
+    ocp_nlp_timeout_heuristic_t timeout_heuristic; // type of heuristic used to predict the time of the next iteration
+
 } ocp_nlp_filterddp_opts;
 
 //
@@ -221,6 +224,9 @@ typedef struct
     int status_internal;
 
     int ni_bounds;
+
+    // timeout memory
+    double timeout_estimated_per_iteration_time;
 
 } ocp_nlp_filterddp_memory;
 
