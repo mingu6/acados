@@ -1407,6 +1407,10 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
         double z_norm = 0.0;
         int ni_bounds = 0;
 
+        // the dimensions may change between stages (multi-phase OCPs): Vx, Vxx of stage i+1 are of size nx[i+1],
+        // fx is nx[i+1] x nx[i]. A stage without controls (the transition stage of a multi-phase OCP) has no
+        // minimization, its value function is the Q function, Vxx = Cs and Vx = Qx; products over the empty
+        // control dimension are spelled out, as BLASFEO does not guarantee them for an inner dimension 0.
         for (int i = N-1; i >= 0; i--)
         {
             int nxi = nx[i];
@@ -1821,7 +1825,11 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
 
             if (ngi > 0)
             {
-                blasfeo_dgemm_nn(ngi, nxp, nui, 1.0, &work->gu, 0, 0, alpha_beta, 0, 0, -1.0, &work->rhs_g, 0, 0, mem->alphas_betas+i, 0, 0);
+                // ds = gu du + gx dx + q, which at a stage without controls is the linearization of the rows alone
+                if (nui > 0)
+                    blasfeo_dgemm_nn(ngi, nxp, nui, 1.0, &work->gu, 0, 0, alpha_beta, 0, 0, -1.0, &work->rhs_g, 0, 0, mem->alphas_betas+i, 0, 0);
+                else
+                    blasfeo_dgecpsc(ngi, nxp, -1.0, &work->rhs_g, 0, 0, mem->alphas_betas+i, 0, 0);
                 for (int j = 0; j < ngi; j++)
                     for (int k = 0; k < nxp; k++)
                         EL(mem->psig_omegag+i, j, k) = VEL(&work->Sigmas, j)*EL(mem->alphas_betas+i, j, k) - EL(&work->rhs_s, j, k);
@@ -1930,9 +1938,13 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
                     if (nz > 0)
                         blasfeo_dgemm_tn(nxi, nxi, nz, -1.0, &work->abz, 0, 1, &work->abz, 0, 1, 1.0, &work->Vxx, 0, 0, &work->Vxx, 0, 0);
                 }
-                else
+                else if (nui > 0)
                 {
                     blasfeo_dgemm_tn(nxi, nxi, nui, -1.0, &work->sol_tmp, 0, 1, &work->sol_tmp, 0, 1, 1.0, &work->C, 0, 0, &work->Vxx, 0, 0);
+                }
+                else
+                {
+                    blasfeo_dgecp(nxi, nxi, &work->C, 0, 0, &work->Vxx, 0, 0);
                 }
                 // exactly symmetric: the rounding asymmetry of the products is mirrored away
                 for (int j = 0; j < nxi; j++)
@@ -1941,7 +1953,10 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
             }
             else
             {
-                blasfeo_dgemm_tn(nxi, nxi, nui, 1.0, alpha_beta, 0, 1, &work->B, 0, 0, 1.0, &work->C, 0, 0, &work->Vxx, 0, 0);
+                if (nui > 0)
+                    blasfeo_dgemm_tn(nxi, nxi, nui, 1.0, alpha_beta, 0, 1, &work->B, 0, 0, 1.0, &work->C, 0, 0, &work->Vxx, 0, 0);
+                else
+                    blasfeo_dgecp(nxi, nxi, &work->C, 0, 0, &work->Vxx, 0, 0);
                 if (nhi > 0)
                     blasfeo_dgemm_tn(nxi, nxi, nhi, 1.0, mem->psih_omegah+i, 0, 1, &work->hx, 0, 0, 1.0, &work->Vxx, 0, 0, &work->Vxx, 0, 0);
                 if (ngi > 0)
@@ -1960,7 +1975,10 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
                 }
             }
 
-            blasfeo_dgemv_t(nui, nxi, 1.0, alpha_beta, 0, 1, &work->Qu, 0, 1.0, &work->lx, 0, &work->Vx_next, 0);
+            if (nui > 0)
+                blasfeo_dgemv_t(nui, nxi, 1.0, alpha_beta, 0, 1, &work->Qu, 0, 1.0, &work->lx, 0, &work->Vx_next, 0);
+            else
+                blasfeo_dveccp(nxi, &work->lx, 0, &work->Vx_next, 0);
             blasfeo_dgemv_t(nx[i+1], nxi, 1.0, &work->fx, 0, 0, &work->Vx, 0, 1.0, &work->Vx_next, 0, &work->Vx_next, 0);
             blasfeo_dgemv_t(nx[i+1], nxi, 1.0, &work->fx, 0, 0, &work->lambda, 0, 1.0, &work->lx, 0, &work->lambda_next, 0);
             if (nhi > 0)
@@ -1982,7 +2000,10 @@ static void filterddp_backward_pass(ocp_nlp_config *config, ocp_nlp_dims *dims, 
             // beta' Lu + betas' Ls + omegah' h + omegag' q, bounded by the other residuals.
             // pi holds it until the export, which picks the multiplier attaining dual_inf.
             filterddp_set_pi(dims, out, i, &work->Vd);
-            blasfeo_dgemv_t(nui, nxi, 1.0, alpha_beta, 0, 1, &work->Lu, 0, 0.0, &work->tmp_nv, 0, &work->tmp_nv, 0);
+            if (nui > 0)
+                blasfeo_dgemv_t(nui, nxi, 1.0, alpha_beta, 0, 1, &work->Lu, 0, 0.0, &work->tmp_nv, 0, &work->tmp_nv, 0);
+            else
+                blasfeo_dvecse(nxi, 0.0, &work->tmp_nv, 0);
             if (nhi > 0)
                 blasfeo_dgemv_t(nhi, nxi, 1.0, mem->psih_omegah+i, 0, 1, &work->h, 0, 1.0, &work->tmp_nv, 0, &work->tmp_nv, 0);
             if (ngi > 0)
@@ -2953,15 +2974,6 @@ int ocp_nlp_filterddp_precompute(void *config_, void *dims_, void *nlp_in_, void
     {
         printf("ocp_nlp_filterddp: terminal constraints are not supported, got ni[N] = %d.\n", dims->ni[N]);
         exit(1);
-    }
-    for (int i = 1; i <= N; i++)
-    {
-        if (dims->nx[i] != dims->nx[0] || (i < N && dims->nu[i] != dims->nu[0]))
-        {
-            printf("ocp_nlp_filterddp: stage dependent nx or nu (multi-phase OCPs) are not supported, got nx[%d] = %d, nu[%d] = %d.\n",
-                    i, dims->nx[i], i, dims->nu[i]);
-            exit(1);
-        }
     }
     for (int i = 0; i <= N; i++)
     {
