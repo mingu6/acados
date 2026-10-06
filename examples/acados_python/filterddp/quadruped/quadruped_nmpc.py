@@ -33,7 +33,8 @@ Quadruped-PyMPC's nominal centroidal NMPC with FILTERDDP as its solver, in close
 Go2 trots forward on flat ground (gym-quadruped). The OCP is Quadruped-PyMPC's own (single rigid body with
 point feet, LINEAR_LS tracking cost, ERK dynamics, friction cone, N = 12 stages of 20 ms); only its solver
 options change, from SQP (one Gauss-Newton iteration per call) to FILTERDDP with the Gauss-Newton Hessian,
-capped at --max_iter iterations and warm started from the shifted policy of the previous solve. The MPC
+capped at --max_iter iterations and warm started from the shifted policy of the previous solve, rolled out
+in closed loop from the measured state (AcadosOcpSolver.warm_start_from_policy). The MPC
 runs at 100 Hz, the physics at 500 Hz, and the whole-body layer (stance torques from the planned forces,
 swing trajectories, friction compensation) is Quadruped-PyMPC's.
 
@@ -62,7 +63,7 @@ HEIGHT_LIMIT = 0.12      # m, base height: a fall
 LEGS = ('FL', 'FR', 'RL', 'RR')
 
 
-def use_filterddp(max_iter, warm_start):
+def use_filterddp(max_iter):
     """Make Quadruped-PyMPC's NMPC build its OCP for FILTERDDP. The generated code goes to this directory."""
     import quadruped_pympc.config as config
     import quadruped_pympc.controllers.gradient.nominal.centroidal_nmpc_nominal as nominal
@@ -75,7 +76,6 @@ def use_filterddp(max_iter, warm_start):
         opts.qp_solver_cond_N = config.mpc_params['horizon']
         opts.levenberg_marquardt = 0.0      # an SQP setting FILTERDDP does not use
         opts.nlp_solver_tol_stat = opts.nlp_solver_tol_eq = opts.nlp_solver_tol_ineq = opts.nlp_solver_tol_comp = TOL
-        opts.filterddp_warm_start = bool(warm_start)
         ocp.code_export_directory = os.path.join(HERE, 'c_generated_code')
         return AcadosOcpSolver(ocp, json_file=os.path.join(HERE, 'quadruped_filterddp_ocp.json'), **kwargs)
 
@@ -83,13 +83,29 @@ def use_filterddp(max_iter, warm_start):
 
 
 class SolveLog:
-    """Stands in for the controller's AcadosOcpSolver and records status, iterations and time of each solve."""
+    """Stands in for the controller's AcadosOcpSolver and records status, iterations and time of each solve. With
+    warm_start, each solve starts from the previous solve's policy rolled out from the initial state the controller
+    sets (lbx at stage 0)."""
 
-    def __init__(self, solver):
+    def __init__(self, solver, warm_start=False):
         self.solver = solver
+        self.warm_start = warm_start
+        self.x0 = None
         self.calls = []
 
+    def set(self, stage, field, value):
+        if stage == 0 and field == 'lbx':
+            self.x0 = np.array(value, dtype=float).flatten()
+        return self.solver.set(stage, field, value)
+
+    def constraints_set(self, stage, field, value, *args, **kwargs):
+        if stage == 0 and field == 'lbx':
+            self.x0 = np.array(value, dtype=float).flatten()
+        return self.solver.constraints_set(stage, field, value, *args, **kwargs)
+
     def solve(self):
+        if self.warm_start and self.x0 is not None:
+            self.solver.warm_start_from_policy(self.x0)   # no policy before the first solve or after a failed one
         status = self.solver.solve()
         self.calls.append((status, self.solver.get_stats('nlp_iter'), 1e3*self.solver.get_stats('time_tot')))
         return status
@@ -117,7 +133,7 @@ def main():
     from gym_quadruped.utils.quadruped_utils import LegsAttr
     from quadruped_pympc.helpers.quadruped_utils import plot_swing_mujoco
     if args.solver == 'filterddp':
-        use_filterddp(args.max_iter, args.warm_start)
+        use_filterddp(args.max_iter)
     from quadruped_pympc.quadruped_pympc_wrapper import QuadrupedPyMPC_Wrapper
 
     sim_dt = cfg.simulation_params['dt']
@@ -131,7 +147,7 @@ def main():
                                      quadrupedpympc_observables_names=('ref_feet_pos', 'nmpc_footholds', 'swing_time',
                                                                        'lift_off_positions'))
     controller = wrapper.srbd_controller_interface.controller
-    log = SolveLog(controller.acados_ocp_solver)
+    log = SolveLog(controller.acados_ocp_solver, args.solver == 'filterddp' and args.warm_start)
     controller.acados_ocp_solver = log
     tau_limits = {leg: TAU_LIMIT*env.mjModel.actuator_ctrlrange[env.legs_tau_idx[leg]] for leg in LEGS}
     tau = LegsAttr(*[np.zeros((env.mjModel.nv, 1)) for _ in LEGS])

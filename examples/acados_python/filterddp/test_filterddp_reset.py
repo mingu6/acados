@@ -30,8 +30,9 @@
 
 """
 reset() of FILTERDDP on the unicycle of test_filterddp.py: after a solve that ends with NaN, reset() returns the
-solver to the state of a new one, so that the next solve is bit for bit the first solve of a new solver, and a
-warm-started solve after reset() starts cold instead of from the policy of the solves before.
+solver to the state of a new one, so that the next solve is bit for bit the first solve of a new solver;
+warm_start_from_policy refuses after reset(), as on a new solver, and no multipliers of the solves before reset()
+reach a mu_based initialization.
 """
 
 import sys
@@ -40,10 +41,11 @@ import numpy as np
 from acados_template import AcadosOcpSolver
 
 from test_filterddp import N, NU, NX, X0, setup, solve
-from test_filterddp_timeout import identical, report, result
+from test_filterddp_timeout import identical, report, result, warm_solve
 
 ACADOS_SUCCESS = 0
 ACADOS_NAN_DETECTED = 1
+ACADOS_READY = 5
 JSON_FILE = 'test_filterddp_reset_ocp.json'
 
 
@@ -75,20 +77,32 @@ def main():
     solve(solver, X0)
     ok &= report('after reset(): the first solve of a new solver, bit for bit', identical(result(solver), reference))
 
-    # the converged solves of both solvers leave a policy; a warm-started solve shifts it, unless reset() came between
+    # the converged solves of both solvers leave a policy; warm_start_from_policy takes it, unless reset() came
+    # between: then it refuses and the solve starts cold, as the first solve of a new solver
     x1 = reference['x'][NX:2*NX]
-    for s in (reference_solver, solver):
-        s.options_set('filterddp_warm_start', 1)
-    solve(reference_solver, x1)
-    ok &= report('warm start without reset(): shifts the policy',
-                 reference_solver.get_stats('filterddp_warm_started') == 1)
+    status = warm_solve(reference_solver, x1)
+    ok &= report('warm start without reset(): takes the policy',
+                 status == ACADOS_SUCCESS)
     solver.reset()
+    ok &= report('warm start after reset(): refused (ACADOS_READY)', solver.warm_start_from_policy(x1) == ACADOS_READY)
     solve(solver, x1)
     cold_solver = new_solver(ocp)
-    cold_solver.options_set('filterddp_warm_start', 1)
+    ok &= report('warm start of a new solver: refused (ACADOS_READY)',
+                 cold_solver.warm_start_from_policy(x1) == ACADOS_READY)
     solve(cold_solver, x1)
-    ok &= report('warm start after reset(): cold, the first solve of a new solver, bit for bit',
-                 solver.get_stats('filterddp_warm_started') == 0 and identical(result(solver), result(cold_solver)))
+    ok &= report('solve after reset(): cold, the first solve of a new solver, bit for bit',
+                 identical(result(solver), result(cold_solver)))
+
+    # the multipliers of the solves before reset() do not reach a mu_based initialization after it
+    solver.reset()
+    for s in (solver, cold_solver):
+        s.options_set('filterddp_bound_mult_init_method', 'mu_based')
+    solve(solver, X0)
+    cold_solver = new_solver(ocp)
+    cold_solver.options_set('filterddp_bound_mult_init_method', 'mu_based')
+    solve(cold_solver, X0)
+    ok &= report('mu_based after reset(): the first solve of a new solver, bit for bit',
+                 identical(result(solver), result(cold_solver)))
 
     print('all checks passed' if ok else 'some checks FAILED')
     return 0 if ok else 1

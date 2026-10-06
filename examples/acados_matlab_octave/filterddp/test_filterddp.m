@@ -32,7 +32,8 @@
 % near the upright with an active force limit, with a NONLINEAR_LS
 % cost, ERK dynamics and a nonlinear inequality on the control, solved with FILTERDDP (exact Hessian and
 % Gauss-Newton) and Gauss-Newton SQP as in getting_started, and with the force limit softened. Checks that the
-% solutions agree and that an option FILTERDDP does not use is rejected.
+% solutions agree, that warm_start_from_policy warm starts a receding horizon step and refuses without a policy,
+% and that an option FILTERDDP does not use is rejected.
 
 import casadi.*
 addpath(fullfile(fileparts(mfilename('fullpath')), '..', 'getting_started'));
@@ -45,6 +46,7 @@ x0 = [0; 0.5; 0; 0];  % near the upright equilibrium, where the solution is uniq
 tags = {'filterddp_exact', 'filterddp_gauss_newton', 'sqp_gauss_newton', 'filterddp_soft', 'sqp_soft'};
 x = cell(size(tags));
 u = cell(size(tags));
+solvers = cell(size(tags));
 for k = 1:numel(tags)
     ocp = filterddp_pendulum_ocp(N, T, x0, tags{k});
     solver = AcadosOcpSolver(ocp);
@@ -63,6 +65,7 @@ for k = 1:numel(tags)
     assert(status == 0, sprintf('%s failed with status %d', tags{k}, status));
     x{k} = solver.get('x');
     u{k} = solver.get('u');
+    solvers{k} = solver;
 end
 n_active = sum(abs(u{3}(:)) > 20 - 1e-4);
 fprintf('%d stages at the force limit\n', n_active);
@@ -77,6 +80,35 @@ for pair = {[1, 3], [2, 3], [4, 5]}
         sprintf('%s solution differs from %s', tags{k}, tags{r}));
 end
 assert(max(abs(u{5}(:))) > 20 + 1e-2, 'the soft force limit is not exceeded');
+
+% warm_start_from_policy: receding horizon steps from the predicted next state, warm started from the policy of the
+% previous solve (exact Hessian), against cold solves from zero (Gauss-Newton FILTERDDP)
+warm = solvers{1};
+cold = solvers{2};
+for step = 1:5
+    x1 = warm.get('x', 1);
+    warm.set('constr_x0', x1);
+    status = warm.warm_start_from_policy(x1);
+    assert(status == 0, sprintf('warm_start_from_policy returned %d at step %d', status, step));
+    assert(isequal(warm.get('x', 0), x1), 'warm_start_from_policy did not start the rollout from x0');
+    status = warm.warm_start_from_policy(x1);
+    assert(status == 5, sprintf('a second warm_start_from_policy returned %d, expected 5 (no policy)', status));
+    warm.solve();
+    n_warm = warm.get('sqp_iter');
+    cold.set('constr_x0', x1);
+    cold.set('init_x', zeros(4, N+1));
+    cold.set('init_u', zeros(1, N));
+    cold.solve();
+    assert(warm.get('status') == 0 && cold.get('status') == 0, sprintf('step %d: a solve failed', step));
+    u_warm = warm.get('u');
+    u_cold = cold.get('u');
+    err_u = max(abs(u_warm(:) - u_cold(:)));
+    fprintf('warm start step %d: %d iterations (cold %d), max error u %.2e\n', step, n_warm, cold.get('sqp_iter'), err_u);
+    assert(err_u < 1e-4 * max(1, max(abs(u_cold(:)))), sprintf('step %d: warm and cold solutions differ', step));
+end
+warm.reset();
+status = warm.warm_start_from_policy(x1);
+assert(status == 5, sprintf('warm_start_from_policy after reset returned %d, expected 5 (no policy)', status));
 
 % options of the SQP-type solvers that FILTERDDP does not use are rejected
 ocp = filterddp_pendulum_ocp(N, T, x0, 'filterddp_exact');

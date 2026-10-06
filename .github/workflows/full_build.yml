@@ -357,7 +357,7 @@ jobs:
     - name: Setup Python Environment
       uses: ./.github/actions/setup-python-environment
 
-    - name: FILTERDDP solution, multipliers and sensitivities against SQP, timeout, reset
+    - name: FILTERDDP solution, multipliers and sensitivities against SQP, timeout, reset, Cython warm start
       working-directory: ${{ github.workspace }}/examples/acados_python/filterddp
       shell: bash
       run: |
@@ -365,6 +365,7 @@ jobs:
         python test_filterddp.py
         python test_filterddp_timeout.py
         python test_filterddp_reset.py
+        python test_filterddp_cython.py
 
     - name: FILTERDDP multi-phase OCPs against SQP, warm start across the phases
       working-directory: ${{ github.workspace }}/examples/acados_python/filterddp

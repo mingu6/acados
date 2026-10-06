@@ -32,7 +32,8 @@
 Closed-loop NMPC of the acrobot swing-up with FILTERDDP. The plant is integrated at 1 kHz with Gaussian
 torque noise. The controller is delayed by one OCP step: at every 50 ms step it measures x(t_k), applies
 the affine policy of the active solution, predicts x(t_{k+1}) with the OCP model and solves the OCP from
-the prediction, warm started from the shifted policy of the previous solve; the new solution becomes
+the prediction, warm started from the shifted policy of the previous solve rolled out from the prediction
+(warm_start_from_policy); the new solution becomes
 active at t_{k+1}, so each solve has one step (50 ms) of computation time. Between OCP steps the policy
 u = u0 + k0 + K0 (x - x0(t)) is applied at 100 Hz, with x0(t) the planned initial state propagated with
 the nominal model under u0.
@@ -130,10 +131,14 @@ class Policy:
         return self.clip(self.u0 + self.k + self.K @ (x - x_ref))
 
 
-def solve(solver, x0):
+def solve(solver, x0, warm=False):
+    """With warm, the initial guess is the previous solve's policy, shifted and rolled out from x0 (if the previous
+    solve left one: it converged, reached the iteration cap or timed out)."""
     solver.set(0, 'lbx', x0)
     solver.set(0, 'ubx', x0)
     t0 = time.perf_counter()
+    if warm:
+        solver.warm_start_from_policy(x0)
     status = solver.solve()
     return status, solver.get_stats('nlp_iter'), 1e3*(time.perf_counter() - t0)
 
@@ -238,7 +243,6 @@ def main():
             solver.set(stage, 'u', np.zeros(1))
     status, iters, ms = solve(solver, x)
     print(f'initial solve: status {status}, {iters} iterations, {ms:.1f} ms')
-    solver.options_set('filterddp_warm_start', 1)
     solver.options_set('max_iter', args.max_iter)
     active = Policy(solver, limit)
 
@@ -252,7 +256,7 @@ def main():
                 active = pending
             x_ref = active.x0.copy()
             u = active(x, x_ref)
-            status, iters, ms = solve(solver, np.asarray(model(x, u)).reshape(NX))
+            status, iters, ms = solve(solver, np.asarray(model(x, u)).reshape(NX), warm=True)
             solves.append((k*H_SIM, iters, ms, status))
             pending = Policy(solver, limit)
         elif k % n_policy == 0:

@@ -32,8 +32,9 @@
 Timeout of FILTERDDP (timeout_max_time, timeout_heuristic, set at code generation) on the unicycle of
 test_filterddp.py: an unreached timeout gives the same result as no timeout; a timeout returns status
 ACADOS_TIMEOUT with the iterate of a solve capped at as many iterations (an accepted iterate, strictly inside
-the control bounds, with positive inequality multipliers); the warm start after a timeout shifts the update
-rules of the returned iterate; the heuristics run. The part-way timeouts are fractions of the measured solve time.
+the control bounds, with positive inequality multipliers); the warm start after a timeout (warm_start_from_policy)
+takes the update rules of the returned iterate; the heuristics run. The part-way timeouts are fractions of the
+measured solve time.
 """
 
 import sys
@@ -90,9 +91,11 @@ def build(name: str, timeout: float = 0.0, heuristic: str = 'ZERO') -> AcadosOcp
 
 
 def warm_solve(solver: AcadosOcpSolver, x0: np.ndarray) -> int:
-    solver.options_set('filterddp_warm_start', 1)
+    """the policy of the last solve rolled out from x0, then the solve; -1 if there is no policy to take"""
     solver.constraints_set(0, 'lbx', x0)
     solver.constraints_set(0, 'ubx', x0)
+    if solver.warm_start_from_policy(x0) != ACADOS_SUCCESS:
+        return -1
     return solver.solve()
 
 

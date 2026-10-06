@@ -12,7 +12,8 @@ The OCP is Quadruped-PyMPC's own:
 
 Only its solver options change. Quadruped-PyMPC runs one SQP iteration per MPC call. Here FILTERDDP
 runs 5 iterations with the Gauss-Newton Hessian, warm started from the shifted policy of the previous
-solve (`filterddp_warm_start`). The MPC runs at 100 Hz and the physics at 500 Hz. Everything else,
+solve, rolled out in closed loop from the measured state (`AcadosOcpSolver.warm_start_from_policy`).
+The MPC runs at 100 Hz and the physics at 500 Hz. Everything else,
 including the whole-body layer that turns the plan into joint torques, is Quadruped-PyMPC's.
 
 ## Sources and revisions
