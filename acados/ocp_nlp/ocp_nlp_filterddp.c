@@ -938,7 +938,14 @@ static void filterddp_update_filter(ocp_nlp_filterddp_memory *mem, ocp_nlp_filte
             next_index++;
         }
     }
-    assert(next_index < mem->filter_capacity);
+    // the filter grows by at most one entry per iteration and has room for the max_iter the memory was created
+    // with; a larger max_iter set after creation lets one barrier subproblem outgrow it. Then drop the oldest
+    // entry after entry 0 (theta_max, -inf, which no entry dominates) rather than write past the filter.
+    if (next_index >= mem->filter_capacity)
+    {
+        memmove(mem->filter+2, mem->filter+4, 2*(next_index-2)*sizeof(double));
+        next_index--;
+    }
     mem->filter[2*next_index] = theta_new;
     mem->filter[2*next_index+1] = L_new;
     mem->filter_size = next_index+1;
